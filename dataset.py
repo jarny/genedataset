@@ -1,6 +1,8 @@
 import os, sys
 import pandas, numpy
 
+from . import dataDirectory
+
 # ------------------------------------------------------------
 # Tests - eg. nosetests dataset.py
 # ------------------------------------------------------------
@@ -34,7 +36,8 @@ def test_Dataset():
 # Utility functions 
 # ------------------------------------------------------------
 def rpkm(rawCount, totalReads, medianTranscriptLength):
-	"""Return RPKM value for a gene. Example: rpkm(1022, 34119529, 2566)
+	"""
+	Return RPKM value for a gene. Example: rpkm(1022, 34119529, 2566)
 	Formula is (10^9 * C)/(N * L). See https://www.biostars.org/p/55253/
 	
 	Args:
@@ -46,22 +49,22 @@ def rpkm(rawCount, totalReads, medianTranscriptLength):
 		float
 	"""
 	return numpy.power(10,9)*rawCount/totalReads/medianTranscriptLength
-
-def dataDirectory():
-	"""Return the full path to the directory where data used by this package is kept.
-	"""
-	return os.path.dirname(os.path.abspath(__file__)) + "/data"
 	
 def probeGeneMap(arrayType, probeIds=[]):
 	"""Return dictionaries of mapping between probe ids and gene ids.
 
-	Args:
-		arrayType: one of ['IlluminaWG6']
-		probeIds: list of probe ids to restrict the search. Otherwise all probe ids will be searched.
+    Parameters
+    ----------
+	arrayType: one of ['IlluminaWG6']
+	probeIds: list of probe ids to restrict the search. Otherwise all probe ids will be searched.
 		
-	Returns:
-		dictionary; see example below
+	Returns
+    ----------
+	dictionary with keys 'geneIdsFromProbeId','probeIdsFromGeneId','nonMatchingProbeIds';
+		(see example below)
 		
+	Examples
+    ----------
 	>>> probeGeneMap("IlluminaWG6", probeIds=['ILMN_1212612']
 	{'geneIdsFromProbeId': {'ILMN_1212612': ['ENSMUSG00000039601']}, 'nonMatchingProbeIds': [], 'probeIdsFromGeneId': {'ENSMUSG00000039601': ['ILMN_1212612']}}
 	

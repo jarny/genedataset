@@ -1,0 +1,11 @@
+*.pid
+*.bak
+*.sav
+*.save
+.not
+\#*
+.\#*
+*.pyc
+*~
+.DS_Store
+
