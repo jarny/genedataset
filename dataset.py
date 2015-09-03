@@ -4,33 +4,6 @@ import pandas, numpy
 from . import dataDirectory
 
 # ------------------------------------------------------------
-# Tests - eg. nosetests dataset.py
-# ------------------------------------------------------------
-def test_utilityFunctions():
-	"""Testing of utility functions.
-	"""
-	# rpkm
-	assert rpkm(1022, 34119529, 2566)==11
-	
-	# probeGeneMap
-	pgm = probeGeneMap("IlluminaWG6", probeIds=['ILMN_1212612','ILMN_1213657'])
-	assert pgm['probeIdsFromGeneId']['ENSMUSG00000039601']==['ILMN_1212612']
-	assert len(pgm['geneIdsFromProbeId']['ILMN_1213657'])==15
-
-def test_Dataset():
-	"""Test Dataset class methods.
-	"""
-	ds = Dataset("%s/testdata.h5" % dataDirectory())
-	
-	# metadata test
-	assert ds.platform_type=="microarray"
-	assert not ds.isRnaSeqData
-	assert ds.species=="MusMusculus"
-	
-	# geneIdsFromFeatureIds
-
-
-# ------------------------------------------------------------
 # Utility functions 
 # ------------------------------------------------------------
 def rpkm(rawCount, totalReads, medianTranscriptLength):
@@ -59,7 +32,7 @@ def probeGeneMap(arrayType, probeIds=[]):
 
     Parameters
     ----------
-	arrayType: one of ['IlluminaWG6']
+	arrayType: one of ['IlluminaWG6','Affymetrix']
 	probeIds: list of probe ids to restrict the search. Otherwise all probe ids will be searched.
 		
 	Returns
@@ -142,13 +115,23 @@ def createDatasetFile(destDir, **kwargs):
 		geneId		s01		s02
 		ENSG0000324	0	324
 		ENSG0000132	23	1342
-		
-	metadata: This is an arbitrary area to store some controller specific data, which may be 
-		application specific. An example is ordering of sample groups, or colours.
-
+	
 	Returns
 	----------
 	A Dataset instance.
+
+	Example
+	----------
+	attributes = {"fullname": "Haemopedia",
+				  "version": "1.0",
+				  "description": "Microarray expression of murine haematopoietic cells",
+				  "platform_type": "microarray",
+				  "platform_details": "Illumina WG6 version 2",
+				  "pubmed_id": None,
+				  "species": "MusMusculus"}
+	# If samples, expression, probeIdsFromGeneId, geneIdsFromProbeId have been set as above:
+	createDatasetFile("/datasets", name="haemopedia", attributes=attributes, samples=samples,
+		expression=expression, probeIdsFromGeneId=probeIdsFromGeneId, geneIdsFromProbeId=geneIdsFromProbeId)
 	"""
 	# Parse input
 	if destDir[-1]=='/':
@@ -157,8 +140,23 @@ def createDatasetFile(destDir, **kwargs):
 	attributes = kwargs['attributes']
 	samples = kwargs['samples']
 	expression = kwargs['expression']
-	probeIdsFromGeneId = kwargs['probeIdsFromGeneId']
+	probeIdsFromGeneId = kwargs['probeIdsFromGeneId']	
 	geneIdsFromProbeId = kwargs['geneIdsFromProbeId']
+	
+	# convert a dictionary of lists into a pandas Series with repeated indices
+	values, index = [], []
+	for geneId,probeIds in probeIdsFromGeneId.iteritems():
+		for i in range(len(probeIds)):
+			index.append(geneId)
+			values.append(probeIds[i])
+	probeIdsFromGeneId = pandas.Series(values, index=index)
+	
+	values, index = [], []
+	for probeId,geneIds in geneIdsFromProbeId.iteritems():
+		for i in range(len(geneIds)):
+			index.append(probeId)
+			values.append(geneIds[i])
+	geneIdsFromProbeId = pandas.Series(values, index=index)
 	
 	# Save all values to file
 	filepath = '%s/%s.h5' % (destDir, name)
@@ -166,8 +164,8 @@ def createDatasetFile(destDir, **kwargs):
 	pandas.Series(attributes).to_hdf(filepath, '/series/attributes')
 	samples.to_hdf(filepath, '/dataframe/samples')
 	expression.to_hdf(filepath, '/dataframe/expression')
-	pandas.Series(probeIdsFromGeneId).to_hdf(filepath, '/series/probeIdsFromGeneId')
-	pandas.Series(geneIdsFromProbeId).to_hdf(filepath, '/series/geneIdsFromProbeId')
+	probeIdsFromGeneId.to_hdf(filepath, '/series/probeIdsFromGeneId')
+	geneIdsFromProbeId.to_hdf(filepath, '/series/geneIdsFromProbeId')
 
 	return Dataset(filepath)
 	
@@ -179,10 +177,15 @@ class Dataset(object):
 	An instance of Dataset is associated with its HDF file, which contains all the information about the dataset,
 	including expression matrix, sample information, and various metadata associated with the dataset.
 
-	attributes is a pandas Series with columns
-		['fullname','version','description','platform_type','platform_details','pubmed_id','species']
-		where platform_type is one of ['rnaseq','microarray'] and species is one of ['MusMusculus','HomoSapiens']
-	
+	Attributes
+	----------
+	filepath: full path to the HDFStore file associated with this dataset instance
+	name: name of this dataset, derived by basename of filepath (eg: Dataset('/path/to/mydataset.h5').name wil be 'mydataset')
+	fullname: a more descriptive name stored within the HDFStore file.
+	species: one of ['MusMusculus','HomoSapiens']
+	platform_type: one of ['microarray','rna-seq']
+	isRnaSeqData: boolean value determined only by platform_type=='rna-seq'
+		
 	"""
 	def __init__(self, pathToHdf):
 		self.filepath = pathToHdf
@@ -214,7 +217,8 @@ class Dataset(object):
 		return "<Dataset name:%s species:%s, platform_type:%s>" % (self.name, self.species, self.platform_type)
 
 	def attributes(self):
-		"""Return a dictionary of attributes.
+		"""Return a dictionary of attributes. Keys are
+		['fullname','version','description','platform_type','platform_details','pubmed_id','species']
 		"""
 		return self._attributes.to_dict()
 					
@@ -228,19 +232,19 @@ class Dataset(object):
 	# ------------------------------------------------------------
 	def expressionMatrix(self, geneIds=None, datatype='rpkm', sampleGroupForMean=None):
 		"""Return pandas DataFrame of expression values matching geneIds.
-		
-	    Parameters
-    	----------
+	
+		Parameters
+		----------
 		geneIds: a list of gene ids eg: ['ENSG000003535',...] or a string 'ENSG0000003535' or None, 
 			in which case the full expression matrix is returned.
 		datatype: one of ['counts','rpkm','cpm'] if self.isRnaSeqData is True, ignored if False.
 		sampleGroupForMean: a sample group name eg 'celltype' which will be used to return the mean
 			over the sample ids.
-					
+				
 		Returns
-    	----------
+		----------
 		pandas.DataFrame instance
-					
+				
 		The method works by subsetting the dataframe by index for rnaseq data or by first working out the index
 		to use based on self._probeIdsFromGeneId for microarray data.
 		"""
@@ -271,6 +275,52 @@ class Dataset(object):
 			
 		return df
 		
+	def expressionValues(self, geneIds=[]):
+		"""
+		Return a dictionary of expression values matching geneIds.
+		
+		Example
+		----------
+		expressionValues(geneIds=['ENSMUSG00000019982','ENSMUSG00000005672'])
+			{'values': 
+				{
+					'ILMN_2683910':{'B.1':1.2, ...},
+					'ILMN_2752817':{'B.1':2.2, ...}
+				},
+			 'featureGroups': {'Gene1':['ILMN_2683910'], ...},
+			 'cpm': {}
+			}
+		"""
+		if isinstance(geneIds, str) or isinstance(geneIds, unicode):	# assume single gene was specified
+			geneIds = [geneIds]
+		cpm = {}
+
+		if self.isRnaSeqData:
+			rowIds = set(self._expression['rpkm'].index).intersection(set(geneIds))
+			df = self._expression['rpkm'].loc[rowIds]
+			cpm = dict([(rowId,row.to_dict()) for rowId,row in self._expression['cpm'].loc[rowIds].iterrows()])
+			featureGroups = dict([(index,[index]) for index in df.index])
+		else:	# get matching probeIds to use as row index
+			df = self._expression.loc[self.probeIdsFromGeneIds(geneIds=geneIds)]
+			featureGroups = self.probeIdsFromGeneIds(geneIds=geneIds, returnType="dict")
+		
+		# return a dictionary
+		return {'values':dict([(rowId,row.to_dict()) for rowId,row in df.iterrows()]), 'featureGroups':featureGroups, 'cpm':cpm}
+		
+		
+	def probeIdsFromGeneIds(self, geneIds=[], returnType="list"):
+		"""Return a pandas Series with geneIds as index and matching probe ids as values.
+		"""
+		# The following is really really slow
+		#index = set(self._probeIdsFromGeneId.index).intersection(set(geneIds))
+		#return self._probeIdsFromGeneId.loc[index] if len(index)>0 else pandas.Series()
+		
+		pfgi = self._probeIdsFromGeneId
+		if returnType=="list":
+			return [value for index,value in pfgi.iteritems() if index in geneIds]
+		elif returnType=="dict":
+			return dict([(geneId, [value for index,value in pfgi.iteritems() if index==geneId]) for geneId in geneIds])
+		
 	def totalReads(self):
 		"""Return a dictionary that looks like {'CAGRF7126-1213':44831299, ...}
 		which holds the total number of reads (basically sum of all raw reads) keyed on sample id.
@@ -279,5 +329,55 @@ class Dataset(object):
 		if not self.isRnaSeqData: return {}
 		return self._expression['/dataframe/counts'].sum(axis=0).to_dict()
 		
+	def valueRange(self):
+		"""Return a list of [min,max] value for the whole dataset if it's microarray data.
+		"""
+		df = self._expression['rpkm'] if self.isRnaSeqData else self._expression
+		return [df.min().min(), df.max().max()]
 			
+	# ------------------------------------------------------------
+	# Sample related methods 
+	# ------------------------------------------------------------
+	def sampleGroupNames(self):
+		"""Return a list of sample group names eg: ["celltype","tissue"]
+		"""
+		return self._samples.columns.tolist()
+
+
+# ------------------------------------------------------------
+# Tests - eg. nosetests dataset.py
+# ------------------------------------------------------------
+def test_utilityFunctions():
+	"""Testing of utility functions.
+	"""
+	# rpkm
+	assert rpkm(1022, 34119529, 2566)==11
+	
+	# probeGeneMap
+	pgm = probeGeneMap("IlluminaWG6", probeIds=['ILMN_1212612','ILMN_1213657'])
+	assert pgm['probeIdsFromGeneId']['ENSMUSG00000039601']==['ILMN_1212612']
+	assert len(pgm['geneIdsFromProbeId']['ILMN_1213657'])==15
+
+def test_Dataset():
+	"""Test Dataset class methods.
+	"""
+	ds = Dataset("%s/testdata.h5" % dataDirectory())
+	
+	# metadata test
+	assert ds.platform_type=="microarray"
+	assert not ds.isRnaSeqData
+	assert ds.species=="MusMusculus"
+	
+	# probeIdsFromGeneIds
+	assert ds.probeIdsFromGeneIds(geneIds=['gene1'])==['probe1']
+	assert ds.probeIdsFromGeneIds()==[]
+	assert ds.probeIdsFromGeneIds(geneIds=['gene2'], returnType="dict")=={'gene2':['probe2','probe3']}
+	
+	# expressionValues
+	ev = ds.expressionValues(geneIds=['gene2'])
+	assert ev['values']['probe2']['s01']==5.54
+	assert ev['featureGroups']['gene2']==['probe2','probe3']
+
+	# samples
+	assert ds.sampleGroupNames()==['celltype','tissue']
 	

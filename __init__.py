@@ -1,5 +1,4 @@
 """
-[jchoi@:~/projects/Hematlas/Haemosphere-new]% pip install git+file:/Users/jchoi/projects/Hematlas/
 """
 
 __all__ = ['dataset','geneset']
