@@ -59,7 +59,7 @@ class Geneset(object):
 		species: one of ['MusMusculus','HomoSapiens'] to restrict search space; may be left out;
 		caseSensitive: boolean; default False
 		searchColumns: a list whose members may be any of ['EnsemblId','GeneSymbol','Synonyms','Description'].
-			Leaving it out will use this full list
+			Leaving it out will use this full list. ('GeneId' can also be used instead of 'EnsemblId')
 			
 		Returns
 		----------
@@ -74,6 +74,9 @@ class Geneset(object):
 		"""
 		gs = copy.copy(self)
 		queryStrings = kwargs['queryStrings'] if 'queryStrings' in kwargs else args[0] if args else []
+		if isinstance(queryStrings, str) or isinstance(queryStrings, unicode):	# assume queryString was specified as a string
+			queryStrings = [queryStrings]
+	
 		if not queryStrings:
 			return gs
 			
@@ -85,10 +88,16 @@ class Geneset(object):
 		caseSensitive = kwargs['caseSensitive'] if 'caseSensitive' in kwargs else False
 		if not caseSensitive: queryStrings = [item.lower() for item in queryStrings]
 		
-		searchColumns = ['EnsemblId','GeneSymbol','Synonyms','Description']
-		if 'searchColumns' in kwargs and kwargs['searchColumns'] and len(set(searchColumns).intersection(set(kwargs['searchColumns'])))>0:
-			searchColumns = list(set(searchColumns).intersection(set(kwargs['searchColumns'])))
-
+		# determine which columns to search
+		searchColumns = kwargs.get('searchColumns')
+		allColumns = ['EnsemblId','GeneSymbol','Synonyms','Description']
+		if searchColumns:
+			searchColumns = ['EnsemblId' if item=='GeneId' or item=='geneId' else item for item in searchColumns]
+		if searchColumns and len(set(allColumns).intersection(set(searchColumns)))>0:
+			searchColumns = list(set(allColumns).intersection(set(searchColumns)))
+		else:
+			searchColumns = allColumns
+		
 		rowsToKeep = set()
 		for column in searchColumns:
 			if column=='EnsemblId':	# match should be done on full string match rather than partial
@@ -123,7 +132,13 @@ class Geneset(object):
 		"""
 		return self._dataframe.reset_index().to_json(orient="records")					
 
-		
+	'''
+	def medianTranscriptLengths(self):
+		"""Return a dictionary of median transcript length keyed on gene id
+		"""
+		return dict(zip(self._dataframe.index, self._dataframe['MedianTranscriptLength']))
+	'''
+	
 # ------------------------------------------------------------
 # Tests - eg. nosetests dataset.py
 # ------------------------------------------------------------
@@ -133,13 +148,21 @@ def test_Geneset():
 	"""
 	gs = Geneset()
 	assert gs.size>60000
+	
+	# subset methods
 	gs = gs.subset(queryStrings=['ccr3'])
 	assert gs.geneIds()==['ENSG00000183625', 'ENSMUSG00000035448']
-	assert gs.to_json().startswith('{"ENSG00000183625":')
+	assert '"EnsemblId":"ENSG00000183625"' in gs.to_json()
 	
+	gs = Geneset().subset(queryStrings='ccr3')
+	assert gs.geneIds()==['ENSG00000183625', 'ENSMUSG00000035448']
+
 	gs = Geneset(name='Search: %s' % 'myb', description='') \
 				.subset(queryStrings=['myb'], searchColumns=None, species=None)
 	assert gs.size()==44
 	
 	gs = Geneset().subset(queryStrings=['ENSMUSG00000019982', 'ENSMUSG00000047591'], searchColumns=["EnsemblId"])	
 	assert gs.size()==2
+
+	gs = Geneset().subset(queryStrings=['ENSMUSG00000019982', 'ENSMUSG00000047591'], searchColumns=["GeneId"])	
+	assert gs.size()==2	

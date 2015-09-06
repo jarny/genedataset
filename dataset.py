@@ -32,7 +32,7 @@ def probeGeneMap(arrayType, probeIds=[]):
 
     Parameters
     ----------
-	arrayType: one of ['IlluminaWG6','Affymetrix']
+	arrayType: {'IlluminaWG6','Affymetrix'}
 	probeIds: list of probe ids to restrict the search. Otherwise all probe ids will be searched.
 		
 	Returns
@@ -59,8 +59,8 @@ def probeGeneMap(arrayType, probeIds=[]):
 	
 	# Because of multiple matches we have to return a list for each key
 	for probeId,row in df.iterrows():
-		probeIdsFromGeneId[row['geneId']].add(probeId)
-		geneIdsFromProbeId[probeId].add(row['geneId'])
+		if row['geneId']: probeIdsFromGeneId[row['geneId']].add(probeId)
+		if probeId: geneIdsFromProbeId[probeId].add(row['geneId'])
 		
 	return {'probeIdsFromGeneId': dict([(key,list(probeIdsFromGeneId[key])) for key in probeIdsFromGeneId]),
 			'geneIdsFromProbeId': dict([(key,list(geneIdsFromProbeId[key])) for key in geneIdsFromProbeId]),
@@ -143,6 +143,13 @@ def createDatasetFile(destDir, **kwargs):
 	probeIdsFromGeneId = kwargs['probeIdsFromGeneId']	
 	geneIdsFromProbeId = kwargs['geneIdsFromProbeId']
 	
+	# Only keep probeIds which occur in expression matrix
+	pgi = dict([(geneId, probeIdsFromGeneId[geneId]) for geneId in probeIdsFromGeneId.keys() \
+		if pandas.notnull(geneId) and len([probeId for probeId in probeIdsFromGeneId[geneId] if probeId in expression.index])>0])
+	gpi = dict([(probeId, geneIdsFromProbeId[probeId]) for probeId in geneIdsFromProbeId.keys() \
+		if probeId in expression.index and len([geneId for geneId in geneIdsFromProbeId[probeId] if pandas.notnull(geneId)])>0])
+		
+	'''	
 	# convert a dictionary of lists into a pandas Series with repeated indices
 	values, index = [], []
 	for geneId,probeIds in probeIdsFromGeneId.iteritems():
@@ -150,6 +157,7 @@ def createDatasetFile(destDir, **kwargs):
 			index.append(geneId)
 			values.append(probeIds[i])
 	probeIdsFromGeneId = pandas.Series(values, index=index)
+	print '###', len(probeIdsFromGeneId), len([index for index in probeIdsFromGeneId if pandas.isnull(index)])
 	
 	values, index = [], []
 	for probeId,geneIds in geneIdsFromProbeId.iteritems():
@@ -157,15 +165,15 @@ def createDatasetFile(destDir, **kwargs):
 			index.append(probeId)
 			values.append(geneIds[i])
 	geneIdsFromProbeId = pandas.Series(values, index=index)
-	
+	'''
 	# Save all values to file
 	filepath = '%s/%s.h5' % (destDir, name)
 	if os.path.isfile(filepath): os.remove(filepath)
 	pandas.Series(attributes).to_hdf(filepath, '/series/attributes')
 	samples.to_hdf(filepath, '/dataframe/samples')
 	expression.to_hdf(filepath, '/dataframe/expression')
-	probeIdsFromGeneId.to_hdf(filepath, '/series/probeIdsFromGeneId')
-	geneIdsFromProbeId.to_hdf(filepath, '/series/geneIdsFromProbeId')
+	pandas.Series(pgi).to_hdf(filepath, '/series/probeIdsFromGeneId')
+	pandas.Series(gpi).to_hdf(filepath, '/series/geneIdsFromProbeId')
 
 	return Dataset(filepath)
 	
@@ -244,30 +252,25 @@ class Dataset(object):
 		Returns
 		----------
 		pandas.DataFrame instance
-				
-		The method works by subsetting the dataframe by index for rnaseq data or by first working out the index
-		to use based on self._probeIdsFromGeneId for microarray data.
+		
 		"""
+		if not geneIds:	return pandas.DataFrame()
+
 		df = self._expression[datatype] if self.isRnaSeqData else self._expression
 		
 		if isinstance(geneIds, str) or isinstance(geneIds, unicode):	# assume single gene was specified
 			geneIds = [geneIds]
-				
-		if self.isRnaSeqData:
-			try:
-				if geneIds:
-					df = df.loc[set(geneIds).intersection(set(df.index))]   # otherwise all geneIds are returned with NaN values for no matches
-			except KeyError:	# no geneIds found in df
-				return pandas.DataFrame()
-		else:
-			if geneIds:
-				probeIds = []
-				for key,val in self._probeIdsFromGeneId.iteritems():
-					if key in geneIds:
-						for probeId in val:
-							probeIds.append(probeId)
-				df = df.loc[probeIds]  # will be empty DataFrame (with columns though) if probeIds is empty
 		
+		# work out which row index to use based on platform type	
+		index = set(geneIds).intersection(set(df.index)) if self.isRnaSeqData else \
+			set(self.probeIdsFromGeneIds(geneIds=geneIds)).intersection(set(df.index))
+			#[probeId for geneId,probeId in self._probeIdsFromGeneId.iteritems() if geneId in geneIds]
+		
+		if index:
+			df = df.loc[index]
+		else:
+			return pandas.DataFrame()
+					
 		if sampleGroupForMean:
 			sgi = self.sampleGroupItems(sampleGroupForMean)
 			if ','.join(sgi)!=','.join(df.columns):	# it's possible for celltypes to be defined the same as sample ids, for example
@@ -307,20 +310,6 @@ class Dataset(object):
 		# return a dictionary
 		return {'values':dict([(rowId,row.to_dict()) for rowId,row in df.iterrows()]), 'featureGroups':featureGroups, 'cpm':cpm}
 		
-		
-	def probeIdsFromGeneIds(self, geneIds=[], returnType="list"):
-		"""Return a pandas Series with geneIds as index and matching probe ids as values.
-		"""
-		# The following is really really slow
-		#index = set(self._probeIdsFromGeneId.index).intersection(set(geneIds))
-		#return self._probeIdsFromGeneId.loc[index] if len(index)>0 else pandas.Series()
-		
-		pfgi = self._probeIdsFromGeneId
-		if returnType=="list":
-			return [value for index,value in pfgi.iteritems() if index in geneIds]
-		elif returnType=="dict":
-			return dict([(geneId, [value for index,value in pfgi.iteritems() if index==geneId]) for geneId in geneIds])
-		
 	def totalReads(self):
 		"""Return a dictionary that looks like {'CAGRF7126-1213':44831299, ...}
 		which holds the total number of reads (basically sum of all raw reads) keyed on sample id.
@@ -335,15 +324,116 @@ class Dataset(object):
 		df = self._expression['rpkm'] if self.isRnaSeqData else self._expression
 		return [df.min().min(), df.max().max()]
 			
+	def correlation(self, featureId):
+		"""
+		Return a dictionary of correlation scores for each feature id in the dataset, eg: {'ENSMUSG0000034355':0.343, ...}
+		Each value is the correlation between featureId and each feature in the appropriate expression matrix.
+		featureId must be a member of the dataset (ie. probe id for microarray data). Otherwise None is returned.
+		In this case only the keys contained in this dictionary are returned.
+		"""
+		from scipy.stats.stats import pearsonr
+		
+		# The methods are quite different for rna-seq vs microarray datasets
+		df = self._expression['rpkm'] if self.isRnaSeqData else self._expression
+		if featureId not in df.index: return None
+		
+		if self.isRnaSeqData:	# use log2 rpkm values
+			df = numpy.log2(df)		
+		
+		# values for featureId
+		values = df.loc[featureId]
+			
+		# loop through all features and calculate correlation
+		score = {}
+		for featureId,row in df.iterrows():
+			corr = pearsonr(values, row)[0]   # only need correlation and not the p value
+			if pandas.notnull(corr):   # null can happen if row is all zeros (or all the same values => zero covariance)
+				score[featureId] = corr
+
+		if self.isRnaSeqData:
+			return score
+		else:	# return gene ids as keys instead of probe ids, using highest value probe per gene
+			scoreModified = {}
+			for geneId,probeIds in self._probeIdsFromGeneId.iteritems():
+				scorelist = [score[probeId] for probeId in probeIds if probeId in score]
+				if scorelist:
+					scoreModified[geneId] = max(scorelist)
+			return scoreModified
+		
+	# ------------------------------------------------------------
+	# Probe and genes 
+	# ------------------------------------------------------------		
+	def probeIdsFromGeneIds(self, geneIds=[], returnType="list"):
+		"""Return probe ids matching geneIds.
+		
+		Parameters
+		----------
+		geneIds: a list of gene ids
+		returnType: one of ['list', 'dict']
+		
+		Returns
+		----------
+		If returnType=='list': returns a list of probe ids
+		If returnType=='dict': returns a dictionary of lists, eg: {'gene1':['probe1'],...}
+		"""
+		# The following is really really slow
+		#index = set(self._probeIdsFromGeneId.index).intersection(set(geneIds))
+		#return self._probeIdsFromGeneId.loc[index] if len(index)>0 else pandas.Series()
+		
+		pfgi = self._probeIdsFromGeneId
+		if returnType=="list":
+			return sum([pfgi[geneId] for geneId in geneIds if geneId in pfgi], [])
+		elif returnType=="dict":
+			return dict([(geneId, pfgi[geneId]) for geneId in geneIds if geneId in pfgi])
+		
+	def geneIdsFromProbeIds(self, probeIds=[], returnType="list"):
+		"""Return gene ids matching probeIds.
+		"""
+		gfpi = self._geneIdsFromProbeId
+		if returnType=="list":
+			return sum([gfpi[probeId] for probeId in probeIds if probeId in gfpi], [])
+		elif returnType=="dict":
+			return dict([(probeId, gfpi[probeId]) for probeId in probeIds if probeId in gfpi])
+				
+		
 	# ------------------------------------------------------------
 	# Sample related methods 
 	# ------------------------------------------------------------
-	def sampleGroupNames(self):
+	def sampleGroups(self):
 		"""Return a list of sample group names eg: ["celltype","tissue"]
 		"""
 		return self._samples.columns.tolist()
 
-
+	def sampleGroupItems(self, sampleGroup=None):
+		"""Return a list of sample group items belonging to sampleGroup, eg: ["B1","B2"].
+		The list has no duplicate elements, and is alphabetically ordered.
+		"""
+		df = self._samples
+		return list(sorted(set(df[sampleGroup]))) if sampleGroup else []
+		
+	def sampleIds(self, sampleGroup=None, sampleGroupItem=None):
+		"""Return a list of sample ids, eg: ["sample1","sample2"].
+		If either of sampleGroup or sampleGroupItem is None, returns all sampleIds.
+		"""
+		df = self._samples
+		if sampleGroup and sampleGroupItem:
+			return df[df[sampleGroup]==sampleGroupItem].index.tolist()
+		else:
+			return df.index.tolist()
+	
+	def sampleIdsFromSampleGroups(self):
+		"""Return a dictionary of sample ids as lists, keyed on sample group items,
+		eg: {'celltype': {'B':['s1','s2',...], ...}, ... }
+		"""
+		dict = {}
+		df = self._samples
+		for sampleGroup in df.columns:
+			dict[sampleGroup] = {}
+			for sampleId,value in df[sampleGroup].iteritems():
+				if value not in dict[sampleGroup]: dict[sampleGroup][value] = []
+				dict[sampleGroup][value].append(sampleId)
+		return dict
+	
 # ------------------------------------------------------------
 # Tests - eg. nosetests dataset.py
 # ------------------------------------------------------------
@@ -358,26 +448,35 @@ def test_utilityFunctions():
 	assert pgm['probeIdsFromGeneId']['ENSMUSG00000039601']==['ILMN_1212612']
 	assert len(pgm['geneIdsFromProbeId']['ILMN_1213657'])==15
 
-def test_Dataset():
-	"""Test Dataset class methods.
-	"""
-	ds = Dataset("%s/testdata.h5" % dataDirectory())
-	
-	# metadata test
+def test_metadata():
+	ds = Dataset("%s/testdata.h5" % dataDirectory())	
 	assert ds.platform_type=="microarray"
 	assert not ds.isRnaSeqData
 	assert ds.species=="MusMusculus"
 	
-	# probeIdsFromGeneIds
+def test_probeIdGeneIdMapping():
+	ds = Dataset("%s/testdata.h5" % dataDirectory())	
 	assert ds.probeIdsFromGeneIds(geneIds=['gene1'])==['probe1']
 	assert ds.probeIdsFromGeneIds()==[]
 	assert ds.probeIdsFromGeneIds(geneIds=['gene2'], returnType="dict")=={'gene2':['probe2','probe3']}
 	
-	# expressionValues
+def test_expressionMatrix():
+	ds = Dataset("%s/testdata.h5" % dataDirectory())	
+	assert ds.expressionMatrix().empty
+	
+def test_expressionValues():
+	ds = Dataset("%s/testdata.h5" % dataDirectory())	
 	ev = ds.expressionValues(geneIds=['gene2'])
 	assert ev['values']['probe2']['s01']==5.54
 	assert ev['featureGroups']['gene2']==['probe2','probe3']
+	assert ds.expressionValues(geneIds=['nonsense'])['values']=={}
+	assert str(ds.correlation('probe1')['gene2'])[:4]=='0.53'
 
-	# samples
-	assert ds.sampleGroupNames()==['celltype','tissue']
+def test_samples():
+	ds = Dataset("%s/testdata.h5" % dataDirectory())	
+	assert ds.sampleGroups()==['celltype','tissue']
+	assert ds.sampleGroupItems(sampleGroup="celltype")==['B1','B2']
+	assert ds.sampleIds()==['s01','s02','s03','s04']
+	assert ds.sampleIds(sampleGroup='celltype', sampleGroupItem='B1')==['s01','s02']
+	assert ds.sampleIdsFromSampleGroups()['tissue']['BM']==['s01', 's02', 's03', 's04']
 	
