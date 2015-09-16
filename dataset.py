@@ -143,6 +143,8 @@ def createDatasetFile(destDir, **kwargs):
 	probeIdsFromGeneId = kwargs['probeIdsFromGeneId']	
 	geneIdsFromProbeId = kwargs['geneIdsFromProbeId']
 	
+	# Check data
+	
 	# Only keep probeIds which occur in expression matrix
 	pgi = dict([(geneId, probeIdsFromGeneId[geneId]) for geneId in probeIdsFromGeneId.keys() \
 		if pandas.notnull(geneId) and len([probeId for probeId in probeIdsFromGeneId[geneId] if probeId in expression.index])>0])
@@ -254,25 +256,26 @@ class Dataset(object):
 		pandas.DataFrame instance
 		
 		"""
-		if not geneIds:	return pandas.DataFrame()
-
 		df = self._expression[datatype] if self.isRnaSeqData else self._expression
 		
 		if isinstance(geneIds, str) or isinstance(geneIds, unicode):	# assume single gene was specified
 			geneIds = [geneIds]
 		
-		# work out which row index to use based on platform type	
-		index = set(geneIds).intersection(set(df.index)) if self.isRnaSeqData else \
-			set(self.probeIdsFromGeneIds(geneIds=geneIds)).intersection(set(df.index))
-			#[probeId for geneId,probeId in self._probeIdsFromGeneId.iteritems() if geneId in geneIds]
+		# work out which row index to use based on platform type
+		if geneIds:
+			index = set(geneIds).intersection(set(df.index)) if self.isRnaSeqData else \
+				set(self.probeIdsFromGeneIds(geneIds=geneIds)).intersection(set(df.index))
+				#[probeId for geneId,probeId in self._probeIdsFromGeneId.iteritems() if geneId in geneIds]
+		else:
+			index = df.index
 		
-		if index:
+		if len(index)>0:
 			df = df.loc[index]
 		else:
 			return pandas.DataFrame()
 					
 		if sampleGroupForMean:
-			sgi = self.sampleGroupItems(sampleGroupForMean)
+			sgi = self.sampleGroupItems(sampleGroup=sampleGroupForMean, duplicates=True)
 			if ','.join(sgi)!=','.join(df.columns):	# it's possible for celltypes to be defined the same as sample ids, for example
 				df = df.groupby(sgi, axis=1).mean()
 			
@@ -369,11 +372,11 @@ class Dataset(object):
 		Parameters
 		----------
 		geneIds: a list of gene ids
-		returnType: one of ['list', 'dict']
+		returnType: {'list', 'dict'}
 		
 		Returns
 		----------
-		If returnType=='list': returns a list of probe ids
+		If returnType=='list': returns a flat list of probe ids
 		If returnType=='dict': returns a dictionary of lists, eg: {'gene1':['probe1'],...}
 		"""
 		# The following is really really slow
@@ -388,6 +391,16 @@ class Dataset(object):
 		
 	def geneIdsFromProbeIds(self, probeIds=[], returnType="list"):
 		"""Return gene ids matching probeIds.
+
+		Parameters
+		----------
+		probeIds: a list of probe ids
+		returnType: {'list', 'dict'}
+		
+		Returns
+		----------
+		If returnType=='list': returns a flat list of gene ids
+		If returnType=='dict': returns a dictionary of lists, eg: {'probe1':['gene1'],...}
 		"""
 		gfpi = self._geneIdsFromProbeId
 		if returnType=="list":
@@ -404,13 +417,54 @@ class Dataset(object):
 		"""
 		return self._samples.columns.tolist()
 
-	def sampleGroupItems(self, sampleGroup=None):
-		"""Return a list of sample group items belonging to sampleGroup, eg: ["B1","B2"].
-		The list has no duplicate elements, and is alphabetically ordered.
+	def sampleGroupItems(self, sampleGroup=None, groupBy=None, duplicates=False):
+		"""
+		Return sample group items belonging to sampleGroup, eg: ["B1","B2"].
+		
+		Parameters
+		----------
+		sampleGroup: name of sample group, eg: 'celltype'
+		groupBy: name of another sample group for grouping, eg: 'cell_lineage'
+		duplicates: boolean to return a list of unique values in the list avoiding duplicates
+			if False; if True, it specifies a list of sample group items in the same
+			order/position as columns of expression matrix is requested; ignored if groupBy is specified.
+		
+		Returns
+		----------
+		a list if groupBy is None, eg: ['B1','B2',...]. If duplicates is True, the list
+			returned is the same length as dataset's columns in its expression matrix, and in the same
+			corresponding position.
+		a dictionary of list if groupBy is specified, eg: {'Stem Cell':['LSK','STHSC',...], ...}
+			groupBy sorts the flat list which would have been returned without groupBy into
+			appropriate groups.
+			
+		Note that this method does not make assumptions about the integrity of the data returned for 
+		groupBy specification. So it's possible to return {'Stem Cell':['LSK','STHSC'], 'B Cells':['LSK','B1']},
+		if there is a sample id which has been assigned to ('LSK','Stem Cell') and another to ('LSK','B Cells') by mistake.
 		"""
 		df = self._samples
-		return list(sorted(set(df[sampleGroup]))) if sampleGroup else []
+	
+		if sampleGroup in df.columns and groupBy in df.columns: # group each item by sample ids, then substitute items from sampleGroup
+			sampleIdsFromGroupBy = dict([(item, df[df[groupBy]==item].index.tolist()) for item in set(df[groupBy])])
+			# {'Stem Cell':['sample1','sample2',...], ... }
 		
+			# substitute items from sampleGroup for each sample id
+			dictToReturn = {}
+			for sampleGroupItem in sampleIdsFromGroupBy.keys():
+				# this is the set of matching sample group items with duplicates removed, eg: ['LSK','CMP',...]
+				dictToReturn[sampleGroupItem] = sorted(set([df.at[sampleId,sampleGroup] for sampleId in sampleIdsFromGroupBy[sampleGroupItem]]))                
+			return dictToReturn
+		
+		elif sampleGroup in df.columns:
+			if duplicates:
+				sampleIds = self.expressionMatrix().columns
+				return df.loc[sampleIds][sampleGroup].tolist()
+			else:
+				return sorted(set(df[sampleGroup]))
+
+		else:
+			return []
+			
 	def sampleIds(self, sampleGroup=None, sampleGroupItem=None):
 		"""Return a list of sample ids, eg: ["sample1","sample2"].
 		If either of sampleGroup or sampleGroupItem is None, returns all sampleIds.
@@ -430,10 +484,16 @@ class Dataset(object):
 		for sampleGroup in df.columns:
 			dict[sampleGroup] = {}
 			for sampleId,value in df[sampleGroup].iteritems():
+				if pandas.isnull(value): continue
 				if value not in dict[sampleGroup]: dict[sampleGroup][value] = []
 				dict[sampleGroup][value].append(sampleId)
 		return dict
 	
+	def sampleTable(self):
+		"""Return a pandas DataFrame of the entire sample table.
+		"""
+		return self._samples
+		
 # ------------------------------------------------------------
 # Tests - eg. nosetests dataset.py
 # ------------------------------------------------------------
@@ -461,8 +521,9 @@ def test_probeIdGeneIdMapping():
 	assert ds.probeIdsFromGeneIds(geneIds=['gene2'], returnType="dict")=={'gene2':['probe2','probe3']}
 	
 def test_expressionMatrix():
-	ds = Dataset("%s/testdata.h5" % dataDirectory())	
-	assert ds.expressionMatrix().empty
+	ds = Dataset("%s/testdata.h5" % dataDirectory())
+	assert ds.expressionMatrix()['s01'].tolist()==[3.45,5.54,0]
+	assert ds.expressionMatrix(sampleGroupForMean='celltype').at['probe2','B1']==2.77
 	
 def test_expressionValues():
 	ds = Dataset("%s/testdata.h5" % dataDirectory())	
@@ -476,6 +537,8 @@ def test_samples():
 	ds = Dataset("%s/testdata.h5" % dataDirectory())	
 	assert ds.sampleGroups()==['celltype','tissue']
 	assert ds.sampleGroupItems(sampleGroup="celltype")==['B1','B2']
+	assert ds.sampleGroupItems(sampleGroup='celltype', groupBy='tissue')=={'BM': ['B1', 'B2']}
+	assert ds.sampleGroupItems(sampleGroup='celltype', duplicates=True)==['B1','B1','B2','B2']
 	assert ds.sampleIds()==['s01','s02','s03','s04']
 	assert ds.sampleIds(sampleGroup='celltype', sampleGroupItem='B1')==['s01','s02']
 	assert ds.sampleIdsFromSampleGroups()['tissue']['BM']==['s01', 's02', 's03', 's04']

@@ -37,15 +37,19 @@ class Geneset(object):
 	def geneIds(self):
 		return self._dataframe.index.tolist()
 		
-	def geneSymbols(self):
-		return self._dataframe['GeneSymbol']
+	def geneSymbols(self, returnType="list"):
+		"""
+		Return a list of gene symbols in this geneset if returnType=="list".
+		If returnType=="dict", it returns a dictionary of gene symbols keyed on gene id
+		"""
+		return self._dataframe['GeneSymbol'].to_dict() if returnType=="dict" else self._dataframe['GeneSymbol'].tolist()
 		
 	def species(self):
 		"""
 		Return species string "MusMusculus" or "HomoSapiens". 
 		Assumes that all genes in this set are of the same species, so just looks at the first gene.
 		"""
-		return self._dataframe['Species'].iloc[0] if self.size>0 else None
+		return self._dataframe['Species'].iloc[0] if self.size()>0 else None
 		
 	def subset(self, *args, **kwargs):
 		"""
@@ -83,7 +87,7 @@ class Geneset(object):
 		df = gs._dataframe
 		
 		if 'species' in kwargs and kwargs['species'] in ['MusMusculus','HomoSapiens']:
-			df = df[df['Species']==species]
+			df = df[df['Species']==kwargs['species']]
 			
 		caseSensitive = kwargs['caseSensitive'] if 'caseSensitive' in kwargs else False
 		if not caseSensitive: queryStrings = [item.lower() for item in queryStrings]
@@ -118,6 +122,16 @@ class Geneset(object):
 		gs._dataframe = df.loc[list(rowsToKeep),:]
 		return gs
 		
+	def orthologueGeneIds(self):
+		"""
+		Return a list of gene ids comprising of orthologues of the current set.
+		"""
+		geneIds = []
+		for geneId,row in self._dataframe.iterrows():
+			for item in row['Orthologue'].split(','):	# looks like 'ENSG00003435:Gene1,ENSG00002525:Gene2' (multiple orthologues possible)
+				if item.split(':')[0]: geneIds.append(item.split(':')[0])
+		return list(set(geneIds))
+
 	def to_json(self):
 		"""
 		Return an array of dictionaries for all genes in this geneset. Example:
@@ -142,7 +156,7 @@ class Geneset(object):
 # ------------------------------------------------------------
 # Tests - eg. nosetests dataset.py
 # ------------------------------------------------------------
-def test_Geneset():
+def test_subset():
 	"""
 	Testing of Geneset class methods.
 	"""
@@ -164,5 +178,11 @@ def test_Geneset():
 	gs = Geneset().subset(queryStrings=['ENSMUSG00000019982', 'ENSMUSG00000047591'], searchColumns=["EnsemblId"])	
 	assert gs.size()==2
 
-	gs = Geneset().subset(queryStrings=['ENSMUSG00000019982', 'ENSMUSG00000047591'], searchColumns=["GeneId"])	
+	gs = Geneset().subset(queryStrings=['ENSMUSG00000019982', 'ENSMUSG00000047591'], searchColumns=["GeneId"], species="MusMusculus")	
 	assert gs.size()==2	
+	
+def test_geneSymbols():
+	gs = Geneset().subset(queryStrings=['ENSMUSG00000019982', 'ENSMUSG00000047591'], searchColumns=["GeneId"])	
+	assert gs.geneSymbols() == ['Mafa', 'Myb']
+	assert gs.geneSymbols(returnType="dict")['ENSMUSG00000047591'] == 'Mafa'
+	
