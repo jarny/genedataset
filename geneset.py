@@ -62,7 +62,7 @@ class Geneset(object):
 		queryStrings: a list of query strings such as ['myb','ENSMUSG00000039601']
 		species: one of ['MusMusculus','HomoSapiens'] to restrict search space; may be left out;
 		caseSensitive: boolean; default False
-		searchColumns: a list whose members may be any of ['EnsemblId','GeneSymbol','Synonyms','Description'].
+		searchColumns: a list whose members may be any of ['EnsemblId','EntrezId','GeneSymbol','Synonyms','Description'].
 			Leaving it out will use this full list. ('GeneId' can also be used instead of 'EnsemblId')
 			
 		Returns
@@ -81,7 +81,7 @@ class Geneset(object):
 		if isinstance(queryStrings, str) or isinstance(queryStrings, unicode):	# assume queryString was specified as a string
 			queryStrings = [queryStrings]
 	
-		if not queryStrings:
+		if len(queryStrings)==0:
 			return gs
 			
 		df = gs._dataframe
@@ -94,7 +94,7 @@ class Geneset(object):
 		
 		# determine which columns to search
 		searchColumns = kwargs.get('searchColumns')
-		allColumns = ['EnsemblId','GeneSymbol','Synonyms','Description']
+		allColumns = ['EnsemblId','EntrezId','GeneSymbol','Synonyms','Description']
 		if searchColumns:
 			searchColumns = ['EnsemblId' if item=='GeneId' or item=='geneId' else item for item in searchColumns]
 		if searchColumns and len(set(allColumns).intersection(set(searchColumns)))>0:
@@ -146,6 +146,14 @@ class Geneset(object):
 		"""
 		return self._dataframe.reset_index().to_json(orient="records")					
 
+	def dataframe(self):
+		"""
+		Return a pandas DataFrame object corresponding to gene information in this Geneset.
+		Index of the DataFrame returned is Ensembl gene id. Columns are:
+		['Species','EntrezId','GeneSymbol','Synonyms','Description','MedianTranscriptLength','Orthologue']
+		"""
+		return self._dataframe
+		
 	'''
 	def medianTranscriptLengths(self):
 		"""Return a dictionary of median transcript length keyed on gene id
