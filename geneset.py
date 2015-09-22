@@ -44,12 +44,25 @@ class Geneset(object):
 		"""
 		return self._dataframe['GeneSymbol'].to_dict() if returnType=="dict" else self._dataframe['GeneSymbol'].tolist()
 		
-	def species(self):
+	def species(self, ignoreMixed=True):
 		"""
-		Return species string "MusMusculus" or "HomoSapiens". 
-		Assumes that all genes in this set are of the same species, so just looks at the first gene.
+		Return species for this Geneset.
+
+		Parameters
+		----------
+		ignoreMixed: boolean. If True, the method will only look at the first gene, so this is more efficient
+			if you already know that this Geneset comprises of one species. If False, the method will look at
+			all species and return a list.
+			 
+		Returns
+		----------
+		a string, either of {"MusMusculus", "HomoSapiens"} if ignoreMixed==True
+		a list, such as ["MusMusculus"] or ["MusMusculus","HomoSapiens"] if ignoreMixed==False.
 		"""
-		return self._dataframe['Species'].iloc[0] if self.size()>0 else None
+		if ignoreMixed:
+			return self._dataframe['Species'].iloc[0] if self.size()>0 else None
+		else:
+			return list(set(self._dataframe['Species']))
 		
 	def subset(self, *args, **kwargs):
 		"""
@@ -194,3 +207,9 @@ def test_geneSymbols():
 	assert gs.geneSymbols() == ['Mafa', 'Myb']
 	assert gs.geneSymbols(returnType="dict")['ENSMUSG00000047591'] == 'Mafa'
 	
+def test_species():
+	gs = Geneset().subset(queryStrings=['ENSMUSG00000019982', 'ENSMUSG00000047591'], searchColumns=["GeneId"])	
+	assert gs.species()=='MusMusculus'
+	assert gs.species(ignoreMixed=False)==['MusMusculus']
+	gs = Geneset().subset(queryStrings='ccr3')
+	assert gs.species(ignoreMixed=False)==['MusMusculus','HomoSapiens']

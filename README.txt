@@ -7,7 +7,8 @@ geneset can be used to handle gene data:
 >> ['ENSG00000183625', 'ENSMUSG00000035448']
 
 dataset can be used to handle expression datasets:
->> ds = Dataset("mydataset.h5")
+>> import dataset
+>> ds = dataset.Dataset("mydataset.h5")
 >> print ds.platform_type
 >> 'rna-seq'
 
