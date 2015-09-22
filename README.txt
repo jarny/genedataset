@@ -1,3 +1,6 @@
+genedataset
+===========
+
 genedataset is a package to store and access gene expression datasets and gene definitions. It consists of two main classes, geneset and dataset.
 
 geneset can be used to handle gene data:
@@ -13,6 +16,3 @@ dataset can be used to handle expression datasets:
 >> 'rna-seq'
 
 These classes interact with stored data inside the data/ sub directory.
-
-[jchoi@:~/projects/Hematlas/process_dataset/genedataset]% python setup.py sdist
-[jchoi@:~/projects/Hematlas/Haemosphere-new]% pip install git+file:/Users/jchoi/projects/dev/genedataset
