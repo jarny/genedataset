@@ -1,0 +1,5 @@
+include genedataset *.py
+recursive-include genedataset/data *.h5 *.txt
+CHANGES.txt
+LICENSE.txt
+setup.py

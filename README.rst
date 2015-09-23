@@ -29,7 +29,7 @@ More details to come.
 Version
 -------
 
--  Version 0.1
+-  Version 0.1.4
 
 Contact
 -------
@@ -37,6 +37,4 @@ Contact
 Jarny Choi, Walter + Eliza Hall Institute
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
--  Homepage:
-   http://www.wehi.edu.au/people/doug-hilton/263/doug-hilton-lab-team
 -  e-mail: jchoi@wehi.edu.au
