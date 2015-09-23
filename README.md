@@ -2,6 +2,7 @@ genedataset
 ======
 **genedataset** is a package to store and access gene expression datasets and gene definitions. It consists of two main classes, geneset and dataset.
 
+## geneset
 geneset stores gene information combined from both Ensembl and NCBI/Entrez (mouse and human only), so that you can query it:
 ```
 $ gs = geneset.Geneset().subset(queryStrings='ccr3')
@@ -14,6 +15,7 @@ $ gs.dataframe()
  | ENSMUSG00000035448 | MusMusculus | 12771    | Ccr3       | CC-CKR3|CKR3|Cmkbr1l2|Cmkbr3 | chemokine (C-C motif),receptor 3 | 3273                   |                         |
 ```
 
+## dataset
 dataset can store gene expression data so that it can be queried. The stored data consists of expression values (microarray and rna-seq) and sample data packaged into HDF5 format.
 ```
 $ ds = dataset.Dataset("genedataset/data/testdataset.h5")
@@ -42,5 +44,5 @@ $ ds.sampleTable()
 * v0.1.x - Initial release with minor adjustments to test pypi and github upload/download.
 
 ## License
-[MIT License](https://github.com/chrissimpkins/PyDOC/blob/master/LICENSE)
+[MIT License](LICENSE.txt)
 

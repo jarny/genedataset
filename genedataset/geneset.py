@@ -32,9 +32,15 @@ class Geneset(object):
 		
 	def size(self):
 		# Better to have this as a method rather than property, as self._dataframe may change
+		"""
+		Return the size of this Geneset, which is equivalent to the number of unique gene ids.
+		"""
 		return self._dataframe.shape[0]
 		
 	def geneIds(self):
+		"""
+		Return a list of gene ids found in this Geneset.
+		"""
 		return self._dataframe.index.tolist()
 		
 	def geneSymbols(self, returnType="list"):
@@ -48,16 +54,14 @@ class Geneset(object):
 		"""
 		Return species for this Geneset.
 
-		Parameters
-		----------
-		ignoreMixed: boolean. If True, the method will only look at the first gene, so this is more efficient
-			if you already know that this Geneset comprises of one species. If False, the method will look at
-			all species and return a list.
+		Parameters:
+			ignoreMixed: boolean. If True, the method will only look at the first gene, so this is more efficient
+				if you already know that this Geneset comprises of one species. If False, the method will look at
+				all species and return a list.
 			 
-		Returns
-		----------
-		a string, either of {"MusMusculus", "HomoSapiens"} if ignoreMixed==True
-		a list, such as ["MusMusculus"] or ["MusMusculus","HomoSapiens"] if ignoreMixed==False.
+		Returns:
+			a string, either of {"MusMusculus", "HomoSapiens"} if ignoreMixed==True
+			a list, such as ["MusMusculus"] or ["MusMusculus","HomoSapiens"] if ignoreMixed==False.
 		"""
 		if ignoreMixed:
 			return self._dataframe['Species'].iloc[0] if self.size()>0 else None
@@ -68,26 +72,23 @@ class Geneset(object):
 		"""
 		Return a copy of this instance, but with a subset of genes.
 		
-		Parameters
-		----------
-		Either a list of query strings such as subset(['myb','ccr3']) 
-			or keyworded arguments:
-		queryStrings: a list of query strings such as ['myb','ENSMUSG00000039601']
-		species: one of ['MusMusculus','HomoSapiens'] to restrict search space; may be left out;
-		caseSensitive: boolean; default False
-		searchColumns: a list whose members may be any of ['EnsemblId','EntrezId','GeneSymbol','Synonyms','Description'].
-			Leaving it out will use this full list. ('GeneId' can also be used instead of 'EnsemblId')
+		Parameters:
+			Either a list of query strings such as subset(['myb','ccr3']) 
+				or keyworded arguments:
+			queryStrings: a list of query strings such as ['myb','ENSMUSG00000039601']
+			species: one of ['MusMusculus','HomoSapiens'] to restrict search space; may be left out;
+			caseSensitive: boolean; default False
+			searchColumns: a list whose members may be any of ['EnsemblId','EntrezId','GeneSymbol','Synonyms','Description'].
+				Leaving it out will use this full list. ('GeneId' can also be used instead of 'EnsemblId')
 			
-		Returns
-		----------
-		A new Geneset instance with the subset of genes.
+		Returns:
+			A new Geneset instance with the subset of genes.
 			
-		Examples
-		----------
-		>>> print Geneset().subset(['ENSMUSG00000039601','ccr3']).geneSymbols()
-		EnsemblId
-		ENSG00000183625       CCR3
-		ENSMUSG00000035448    Ccr3
+		Examples:
+			>>> print Geneset().subset(['ENSMUSG00000039601','ccr3']).geneSymbols()
+			EnsemblId
+			ENSG00000183625       CCR3
+			ENSMUSG00000035448    Ccr3
 		"""
 		gs = copy.copy(self)
 		queryStrings = kwargs['queryStrings'] if 'queryStrings' in kwargs else args[0] if args else []
@@ -147,15 +148,17 @@ class Geneset(object):
 
 	def to_json(self):
 		"""
-		Return an array of dictionaries for all genes in this geneset. Example:
-		[{"EnsemblId":"ENSMUSG00000047591",
-		  "Species":"MusMusculus",
-		  "EntrezId":"378435",
-		  "GeneSymbol":"Mafa",
-		  "Synonyms":"RIPE3b1",
-		  "Description":"v-maf musculoaponeurotic fibrosarcoma oncogene family, protein A (avian) ",
-		  "MedianTranscriptLength":1080.0,
-		  "Orthologue":"ENSG00000182759:MAFA"},...]
+		Return an array of dictionaries for all genes in this geneset. 
+		Example:
+			>>> gs.to_json()
+			[{"EnsemblId":"ENSMUSG00000047591",
+			  "Species":"MusMusculus",
+			  "EntrezId":"378435",
+			  "GeneSymbol":"Mafa",
+			  "Synonyms":"RIPE3b1",
+			  "Description":"v-maf musculoaponeurotic fibrosarcoma oncogene family, protein A (avian) ",
+			  "MedianTranscriptLength":1080.0,
+			  "Orthologue":"ENSG00000182759:MAFA"},...]
 		"""
 		return self._dataframe.reset_index().to_json(orient="records")					
 
@@ -178,9 +181,6 @@ class Geneset(object):
 # Tests - eg. nosetests dataset.py
 # ------------------------------------------------------------
 def test_subset():
-	"""
-	Testing of Geneset class methods.
-	"""
 	gs = Geneset()
 	assert gs.size>60000
 	
