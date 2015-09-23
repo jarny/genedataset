@@ -11,7 +11,7 @@ def rpkm(rawCount, totalReads, medianTranscriptLength):
 	Return RPKM value for a gene. Example: rpkm(1022, 34119529, 2566)
 	Formula is (10^9 * C)/(N * L). See https://www.biostars.org/p/55253/
 	
-    Parameters:
+	Parameters:
 		rawCount: unnormalised summarised count for a gene
 		totalReads: total reads for all genes in a sample - ie. library size
 		medianTranscriptLength: median length of all transcripts in the gene.
@@ -28,7 +28,7 @@ def probeGeneMap(arrayType, probeIds=[]):
 	use its own methods there for dealing with probe to gene mapping, as it is more efficient.
 	This function is mainly used when creating the data attached to each Dataset instance.
 
-    Parameters:
+	Parameters:
 		arrayType: {'IlluminaWG6','Affymetrix'}
 		probeIds: list of probe ids to restrict the search. Otherwise all probe ids will be searched.
 		
