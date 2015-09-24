@@ -4,7 +4,7 @@ genedataset
 
 ## geneset
 geneset stores gene information combined from both Ensembl and NCBI/Entrez (mouse and human only), so that you can query it:
-```
+```python
 $ gs = geneset.Geneset().subset(queryStrings='ccr3')
 $ print gs.geneIds()
  ['ENSG00000183625', 'ENSMUSG00000035448']
@@ -17,7 +17,7 @@ $ gs.dataframe()
 
 ## dataset
 dataset can store gene expression data so that it can be queried. The stored data consists of expression values (microarray and rna-seq) and sample data packaged into HDF5 format.
-```
+```python
 $ ds = dataset.Dataset("genedataset/data/testdataset.h5")
 $ ds
  <Dataset name:testdata species:MusMusculus, platform_type:microarray>
@@ -41,7 +41,7 @@ Here is a full example to download a microarray dataset from GEO using GEOparse 
 Once the file has been created, it can be accessed through the Dataset instance. The advantage of this is to store
 all related information for a dataset in one file, and gives you a python object that can be used for analyses and 
 for application development.
-```
+```python
 # Import the dataset from GEO (http://www.ncbi.nlm.nih.gov/geo) using GEOparse.
 # You can also download the files from the website and parse it yourself.
 $ import GEOparse
