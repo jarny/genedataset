@@ -73,13 +73,15 @@ class Geneset(object):
 		Return a copy of this instance, but with a subset of genes.
 		
 		Parameters:
-			Either a list of query strings such as subset(['myb','ccr3']) 
-				or keyworded arguments:
+			a list of query strings: such as Geneset().subset(['myb','ccr3']) or keyworded arguments
+			
 			queryStrings: a list of query strings such as ['myb','ENSMUSG00000039601']
 			species: one of ['MusMusculus','HomoSapiens'] to restrict search space; may be left out;
-			caseSensitive: boolean; default False
+			caseSensitive: boolean, default False; ignored if exactMatch is True
 			searchColumns: a list whose members may be any of ['EnsemblId','EntrezId','GeneSymbol','Synonyms','Description'].
 				Leaving it out will use this full list. ('GeneId' can also be used instead of 'EnsemblId')
+			matchSubstring: boolean, default True; If True, 'Ccr' will match 'Ccr2' and 'Ccr3' for example;
+				Use caseSensitive=True, matchSubstring=False to create exact match conditions
 			
 		Returns:
 			A new Geneset instance with the subset of genes.
@@ -103,8 +105,10 @@ class Geneset(object):
 		if 'species' in kwargs and kwargs['species'] in ['MusMusculus','HomoSapiens']:
 			df = df[df['Species']==kwargs['species']]
 			
-		caseSensitive = kwargs['caseSensitive'] if 'caseSensitive' in kwargs else False
+		caseSensitive = kwargs.get('caseSensitive', False)
 		if not caseSensitive: queryStrings = [item.lower() for item in queryStrings]
+		
+		matchSubstring = kwargs.get('matchSubstring', True)
 		
 		# determine which columns to search
 		searchColumns = kwargs.get('searchColumns')
@@ -117,23 +121,17 @@ class Geneset(object):
 			searchColumns = allColumns
 		
 		rowsToKeep = set()
+		df = df.reset_index()
 		for column in searchColumns:
-			if column=='EnsemblId':	# match should be done on full string match rather than partial
-				for rowIndex in df.index:
-					if rowIndex in rowsToKeep: continue
-					geneId = rowIndex.lower() if not caseSensitive else rowIndex
-					if geneId in queryStrings:
+			for rowIndex,value in df[column].iteritems():
+				if rowIndex in rowsToKeep or not value: continue
+				if not caseSensitive: value = value.lower()
+				for queryString in queryStrings:
+					if matchSubstring and queryString in value or (not matchSubstring and queryString==value):
 						rowsToKeep.add(rowIndex)
-			else:
-				for rowIndex,value in df[column].iteritems():
-					if rowIndex in rowsToKeep or not value: continue
-					if not caseSensitive: value = value.lower()
-					for queryString in queryStrings:
-						if queryString in value: 
-							rowsToKeep.add(rowIndex)
-							break
+						break
 
-		gs._dataframe = df.loc[list(rowsToKeep),:]
+		gs._dataframe = df.loc[list(rowsToKeep),:].set_index('EnsemblId')
 		return gs
 		
 	def orthologueGeneIds(self):
@@ -186,11 +184,23 @@ def test_subset():
 	
 	# subset methods
 	gs = gs.subset(queryStrings=['ccr3'])
-	assert gs.geneIds()==['ENSG00000183625', 'ENSMUSG00000035448']
+	assert set(gs.geneIds())==set(['ENSG00000183625', 'ENSMUSG00000035448'])
 	assert '"EnsemblId":"ENSG00000183625"' in gs.to_json()
 	
 	gs = Geneset().subset(queryStrings='ccr3')
-	assert gs.geneIds()==['ENSG00000183625', 'ENSMUSG00000035448']
+	assert set(gs.geneIds())==set(['ENSG00000183625', 'ENSMUSG00000035448'])
+
+	gs = Geneset().subset(queryStrings='Ccr3', caseSensitive=True)
+	assert gs.geneIds()==['ENSMUSG00000035448']
+
+	gs = Geneset().subset(queryStrings='ccr1', searchColumns=["GeneSymbol"])
+	assert set(gs.geneSymbols())==set(['CCR10', 'CCR12P', 'Ccr1', 'CCR1', 'Ccr10', 'Ccr1l1'])
+	
+	gs = Geneset().subset(queryStrings='ccr1', searchColumns=["GeneSymbol"], matchSubstring=False)
+	assert set(gs.geneSymbols())==set(['Ccr1', 'CCR1'])
+
+	gs = Geneset().subset(queryStrings='CCR1', searchColumns=["GeneSymbol"], matchSubstring=False, caseSensitive=True)
+	assert set(gs.geneSymbols())==set(['CCR1'])
 
 	gs = Geneset(name='Search: %s' % 'myb', description='') \
 				.subset(queryStrings=['myb'], searchColumns=None, species=None)
@@ -204,7 +214,7 @@ def test_subset():
 	
 def test_geneSymbols():
 	gs = Geneset().subset(queryStrings=['ENSMUSG00000019982', 'ENSMUSG00000047591'], searchColumns=["GeneId"])	
-	assert gs.geneSymbols() == ['Mafa', 'Myb']
+	assert set(gs.geneSymbols()) == set(['Mafa', 'Myb'])
 	assert gs.geneSymbols(returnType="dict")['ENSMUSG00000047591'] == 'Mafa'
 	
 def test_species():

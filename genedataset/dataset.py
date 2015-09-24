@@ -138,8 +138,8 @@ def createDatasetFile(destDir, **kwargs):
 	attributes = kwargs['attributes']
 	samples = kwargs['samples']
 	expression = kwargs['expression']
-	probeIdsFromGeneId = kwargs['probeIdsFromGeneId']	
-	geneIdsFromProbeId = kwargs['geneIdsFromProbeId']
+	probeIdsFromGeneId = kwargs.get('probeIdsFromGeneId',{})
+	geneIdsFromProbeId = kwargs.get('geneIdsFromProbeId',{})
 	
 	# Check data
 	
@@ -396,9 +396,9 @@ class Dataset(object):
 		Parameters:
 			sampleGroup: name of sample group, eg: 'celltype'
 			groupBy: name of another sample group for grouping, eg: 'cell_lineage'
-			duplicates: boolean to return a list of unique values in the list avoiding duplicates
-				if False; if True, it specifies a list of sample group items in the same
-				order/position as columns of expression matrix is requested; ignored if groupBy is specified.
+			duplicates: boolean to return a list of unique values in the list avoiding duplicates if False; 
+				if True, it specifies a list of sample group items in the same order/position as columns of 
+				expression matrix is requested; ignored if groupBy is specified.
 		
 		Returns:
 			a list if groupBy is None, eg: ['B1','B2',...]. If duplicates is True, the list
