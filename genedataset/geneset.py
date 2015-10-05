@@ -73,11 +73,11 @@ class Geneset(object):
 		Return a copy of this instance, but with a subset of genes.
 		
 		Parameters:
-			a list of query strings: such as Geneset().subset(['myb','ccr3']) or keyworded arguments
+			list of query strings: such as Geneset().subset(['myb','ccr3']) or keyworded arguments
 			
-			queryStrings: a list of query strings such as ['myb','ENSMUSG00000039601']
+			queryStrings: list of query strings such as ['myb','ENSMUSG00000039601']
 			species: one of ['MusMusculus','HomoSapiens'] to restrict search space; may be left out;
-			caseSensitive: boolean, default False; ignored if exactMatch is True
+			caseSensitive: boolean, default False;
 			searchColumns: a list whose members may be any of ['EnsemblId','EntrezId','GeneSymbol','Synonyms','Description'].
 				Leaving it out will use this full list. ('GeneId' can also be used instead of 'EnsemblId')
 			matchSubstring: boolean, default True; If True, 'Ccr' will match 'Ccr2' and 'Ccr3' for example;

@@ -104,17 +104,17 @@ def createDatasetFile(destDir, **kwargs):
 			s02		T1		peripheral blood
 			(sampleId must be the index of the DataFrame.)
 	
-		expression: pandas DataFrame which has sample ids as columns and probe ids as rows (index)
+		expression: pandas DataFrame which has sample ids as columns and probe ids as index (microarray only)
 			probeId		s01		s02
 			ILMN_1234	4.35	8.42
 			ILMN_4567	8.11	5.81
-		probeIdsFromGeneId: A dictionary of form {'ENSMUSG000004353':['ILMN_1234',...],...}
-		geneIdsFromProbeId: A dictionary of form {'ILMN_1234':['ENSMUSG000004353',...],...}
+		probeIdsFromGeneId: A dictionary of form {'ENSMUSG000004353':['ILMN_1234',...],...} (microarray only)
+		geneIdsFromProbeId: A dictionary of form {'ILMN_1234':['ENSMUSG000004353',...],...} (microarray only)
 			Both of these dictionaries allow for the possibility of multiple matches.
 		
-		counts: pandas DataFrame of raw counts summarised at genes
-		cpm: pandas DataFrame of counts per million values for each gene and sample
-		rpkm: pandas DataFrame of RPKM values for each gene and sample
+		counts: pandas DataFrame of raw counts summarised at genes (rna-seq only)
+		cpm: pandas DataFrame of counts per million values for each gene and sample (rna-seq only)
+		rpkm: pandas DataFrame of RPKM values for each gene and sample (rna-seq only)
 
 	Returns:
 		A Dataset instance.
@@ -137,26 +137,36 @@ def createDatasetFile(destDir, **kwargs):
 	name = kwargs['name']
 	attributes = kwargs['attributes']
 	samples = kwargs['samples']
-	expression = kwargs['expression']
+	
+	expression = kwargs.get('expression')
 	probeIdsFromGeneId = kwargs.get('probeIdsFromGeneId',{})
 	geneIdsFromProbeId = kwargs.get('geneIdsFromProbeId',{})
 	
+	counts = kwargs.get('counts')
+	cpm = kwargs.get('cpm')
+	rpkm = kwargs.get('rpkm')
+
 	# Check data
 	
-	# Only keep probeIds which occur in expression matrix
-	pgi = dict([(geneId, probeIdsFromGeneId[geneId]) for geneId in probeIdsFromGeneId.keys() \
-		if pandas.notnull(geneId) and len([probeId for probeId in probeIdsFromGeneId[geneId] if probeId in expression.index])>0])
-	gpi = dict([(probeId, geneIdsFromProbeId[probeId]) for probeId in geneIdsFromProbeId.keys() \
-		if probeId in expression.index and len([geneId for geneId in geneIdsFromProbeId[probeId] if pandas.notnull(geneId)])>0])
-		
 	# Save all values to file
 	filepath = '%s/%s.h5' % (destDir, name)
 	if os.path.isfile(filepath): os.remove(filepath)
 	pandas.Series(attributes).to_hdf(filepath, '/series/attributes')
 	samples.to_hdf(filepath, '/dataframe/samples')
-	expression.to_hdf(filepath, '/dataframe/expression')
-	pandas.Series(pgi).to_hdf(filepath, '/series/probeIdsFromGeneId')
-	pandas.Series(gpi).to_hdf(filepath, '/series/geneIdsFromProbeId')
+
+	if attributes['platform_type']=='microarray':
+		# Only keep probeIds which occur in expression matrix
+		pgi = dict([(geneId, probeIdsFromGeneId[geneId]) for geneId in probeIdsFromGeneId.keys() \
+			if pandas.notnull(geneId) and len([probeId for probeId in probeIdsFromGeneId[geneId] if probeId in expression.index])>0])
+		gpi = dict([(probeId, geneIdsFromProbeId[probeId]) for probeId in geneIdsFromProbeId.keys() \
+			if probeId in expression.index and len([geneId for geneId in geneIdsFromProbeId[probeId] if pandas.notnull(geneId)])>0])		
+		expression.to_hdf(filepath, '/dataframe/expression')
+		pandas.Series(pgi).to_hdf(filepath, '/series/probeIdsFromGeneId')
+		pandas.Series(gpi).to_hdf(filepath, '/series/geneIdsFromProbeId')
+	else:
+		counts.to_hdf(filepath, '/dataframe/counts')
+		cpm.to_hdf(filepath, '/dataframe/cpm')
+		rpkm.to_hdf(filepath, '/dataframe/rpkm')
 
 	return Dataset(filepath)
 	
