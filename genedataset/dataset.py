@@ -249,7 +249,7 @@ class Dataset(object):
 			geneIds = [geneIds]
 		
 		# work out which row index to use based on platform type
-		if geneIds:
+		if len(geneIds)>0:
 			index = set(geneIds).intersection(set(df.index)) if self.isRnaSeqData else \
 				set(self.probeIdsFromGeneIds(geneIds=geneIds)).intersection(set(df.index))
 				#[probeId for geneId,probeId in self._probeIdsFromGeneId.iteritems() if geneId in geneIds]
