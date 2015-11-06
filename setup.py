@@ -11,7 +11,7 @@ requires = [
     ]
 
 setup(name='genedataset',
-      version='0.1.91',
+      version='0.2',
       description='Store and access gene expression datasets and gene definitions.',
       long_description=README,
       classifiers=[
