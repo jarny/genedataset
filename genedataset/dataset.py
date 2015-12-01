@@ -263,7 +263,8 @@ class Dataset(object):
 					
 		if sampleGroupForMean:
 			sgi = self.sampleGroupItems(sampleGroup=sampleGroupForMean, duplicates=True)
-			if ','.join(sgi)!=','.join(df.columns):	# it's possible for celltypes to be defined the same as sample ids, for example
+			if ','.join([item if pandas.notnull(item) else '' for item in sgi])!=','.join(df.columns):	
+				# it's possible for celltypes to be defined the same as sample ids, for example
 				df = df.groupby(sgi, axis=1).mean()
 			
 		return df
@@ -484,7 +485,7 @@ def test_utilityFunctions():
 	# probeGeneMap
 	pgm = probeGeneMap("IlluminaWG6", probeIds=['ILMN_1212612','ILMN_1213657'])
 	assert pgm['probeIdsFromGeneId']['ENSMUSG00000039601']==['ILMN_1212612']
-	assert len(pgm['geneIdsFromProbeId']['ILMN_1213657'])==15
+	assert len(pgm['geneIdsFromProbeId']['ILMN_1213657'])==17
 
 def test_metadata():
 	ds = Dataset("%s/testdata.h5" % dataDirectory())	
