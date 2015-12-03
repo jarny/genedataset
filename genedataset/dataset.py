@@ -91,6 +91,7 @@ def createDatasetFile(destDir, **kwargs):
 		name: Usually a short abbreviated name to associate with the dataset. Will be used as file name
 			for .h5 file (so "MyDataset" will create MyDataset.h5 file), hence ensure it's file name compliant.
 		attributes: dictionary describing the dataset, with following keys (all values are strings)
+			name: short name for the dataset, usually a nickname.
 			fullname: A more descriptive name for the dataset.
 			version: Some version string to associate with the dataset.
 			description: Description of the dataset.
@@ -120,7 +121,8 @@ def createDatasetFile(destDir, **kwargs):
 		A Dataset instance.
 
 	Example:
-		>>> attributes = {"fullname": "Haemopedia",
+		>>> attributes = {"name":"haemopedia",
+					  "fullname": "Haemopedia",
 					  "version": "1.0",
 					  "description": "Microarray expression of murine haematopoietic cells",
 					  "platform_type": "microarray",
@@ -180,7 +182,8 @@ class Dataset(object):
 
 	Attributes:
 		filepath: full path to the HDFStore file associated with this dataset instance
-		name: name of this dataset, derived by basename of filepath (eg: Dataset('/path/to/mydataset.h5').name wil be 'mydataset')
+		name: name of this dataset, derived either by 'name' key in or by basename of filepath if this key is not present
+			(eg: Dataset('/path/to/mydataset.h5').name wil be 'mydataset')
 		fullname: a more descriptive name stored within the HDFStore file.
 		species: one of ['MusMusculus','HomoSapiens']
 		platform_type: one of ['microarray','rna-seq']
@@ -191,7 +194,7 @@ class Dataset(object):
 		self.filepath = pathToHdf
 		
 		self._attributes = pandas.read_hdf(self.filepath, '/series/attributes')
-		self.name = os.path.splitext(os.path.basename(self.filepath))[0]
+		self.name = self._attributes['name'] if 'name' in self._attributes else os.path.splitext(os.path.basename(self.filepath))[0]
 		self.fullname = self._attributes['fullname']
 		self.species = self._attributes['species']
 		self.platform_type = self._attributes['platform_type']
