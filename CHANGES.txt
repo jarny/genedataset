@@ -2,3 +2,4 @@
 0.2: Probe to gene id mapping files provided had missing probes for some genes. This has now been fixed.
 0.3: Fixed a bug in dataset where missing sample group items could cause an exception when running sampleGroupItems.
 0.4: Name of the dataset can now be set by using 'name' key under '/series/attributes' key of the .h5 file. If this key is not present, filename will be used keeping backwards compatibility.
+0.5: Updated gene annotations using the latest files. geneset now also includes functions used for updating the annotation.
