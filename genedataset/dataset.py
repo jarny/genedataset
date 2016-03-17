@@ -9,7 +9,16 @@ from . import dataDirectory
 def rpkm(rawCount, totalReads, medianTranscriptLength):
 	"""
 	Return RPKM value for a gene. Example: rpkm(1022, 34119529, 2566)
-	Formula is (10^9 * C)/(N * L). See https://www.biostars.org/p/55253/
+	Formula is (10^9 * C)/(N * L). See https://www.biostars.org/p/55253/.
+
+	To convert the whole counts data frame to rpkm data frame, use this code:
+	>>> rpkm = []
+	>>> totReads = counts.sum(axis=0).to_dict()   # {'CAGRF7126-1213':44831299, ...}
+	>>> mtl = genedataset.geneset.Geneset().dataframe()['MedianTranscriptLength'].to_dict()
+	>>> for geneId,row in counts.iterrows():
+			if geneId in mtl:
+				rpkm.append([genedataset.dataset.rpkm(row[col],totReads[col],mtl[geneId]) for col in counts.columns])
+	>>> rpkm = pandas.DataFrame(rpkm, columns=counts.columns, index=[geneId for geneId in counts.index if geneId in mtl])
 	
 	Parameters:
 		rawCount: unnormalised summarised count for a gene
@@ -331,7 +340,7 @@ class Dataset(object):
 		if featureId not in df.index: return None
 		
 		if self.isRnaSeqData:	# use log2 rpkm values
-			df = numpy.log2(df)		
+			df = numpy.log2(df+1)		
 		
 		# values for featureId
 		values = df.loc[featureId]
