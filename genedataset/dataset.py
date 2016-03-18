@@ -348,6 +348,7 @@ class Dataset(object):
 		# loop through all features and calculate correlation
 		score = {}
 		for featureId,row in df.iterrows():
+			if self.isRnaSeqData and row.max()==0: continue
 			corr = pearsonr(values, row)[0]   # only need correlation and not the p value
 			if pandas.notnull(corr):   # null can happen if row is all zeros (or all the same values => zero covariance)
 				score[featureId] = corr
