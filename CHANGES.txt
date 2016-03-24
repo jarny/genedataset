@@ -5,3 +5,4 @@
 0.5: Updated gene annotations using the latest files. geneset now also includes functions used for updating the annotation.
 0.5.1: Fixed a bug in dataset where correlation function could throw an error if zeros were encountered in expression values of rna-seq dataset.
 0.5.2: Previous fix still produces a warning in scipy/numpy if the row is all zeros, so fixed this.
+0.6: Added extra argument 'addVersionSuffix' to dataset.createDatasetFile() to control addition of version suffix to the filename (default True).

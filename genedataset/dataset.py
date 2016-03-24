@@ -96,11 +96,16 @@ def createDatasetFile(destDir, **kwargs):
 	Parameters:
 		destDir: Destination directory for the file being created. Existing file of the same name will
 			be removed before writing.
-
 		name: Usually a short abbreviated name to associate with the dataset. Will be used as file name
-			for .h5 file (so "MyDataset" will create MyDataset.h5 file), hence ensure it's file name compliant.
+			for .h5 file unless 'name' key in attributes is specified and made to be different.
+			So "MyDataset" will create MyDataset.h5 file. Hence ensure it's file name compliant.
+		addVersionSuffix: (bool) default True. Adds version number to the filename if True,
+			so name='MyDataset', attributes={'version':'1.0',...} will create MyDataset.1.0.h5 file.
+			
 		attributes: dictionary describing the dataset, with following keys (all values are strings)
-			name: short name for the dataset, usually a nickname.
+			name: usually the same as name attribute above, but make it different if different filename
+				is desired to dataset name. Example: name='MyDataset', attributes={'name':'mydata',...}
+				will create MyDataset.h5 file but the dataset name will be 'mydata'.
 			fullname: A more descriptive name for the dataset.
 			version: Some version string to associate with the dataset.
 			description: Description of the dataset.
@@ -145,6 +150,7 @@ def createDatasetFile(destDir, **kwargs):
 	# Parse input
 	if destDir[-1]=='/':
 		destDir = destDir[:-1]
+	addVersionSuffix = kwargs.get('addVersionSuffix',True)
 	name = kwargs['name']
 	attributes = kwargs['attributes']
 	samples = kwargs['samples']
@@ -160,7 +166,10 @@ def createDatasetFile(destDir, **kwargs):
 	# Check data
 	
 	# Save all values to file
-	filepath = '%s/%s.h5' % (destDir, name)
+	filepath = '%s/%s' % (destDir, name)
+	if addVersionSuffix and attributes.get('version'):
+		filepath = '%s.%s' % (filepath, attributes['version'])
+	filepath = filepath + '.h5'
 	if os.path.isfile(filepath): os.remove(filepath)
 	pandas.Series(attributes).to_hdf(filepath, '/series/attributes')
 	samples.to_hdf(filepath, '/dataframe/samples')
