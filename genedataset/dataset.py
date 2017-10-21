@@ -1,91 +1,18 @@
 import os, sys
 import pandas, numpy
+import six
 
 from . import dataDirectory
 
 # ------------------------------------------------------------
 # Utility functions 
 # ------------------------------------------------------------
-def rpkm(rawCount, totalReads, medianTranscriptLength):
-	"""
-	Return RPKM value for a gene. Example: rpkm(1022, 34119529, 2566)
-	Formula is (10^9 * C)/(N * L). See https://www.biostars.org/p/55253/.
-
-	To convert the whole counts data frame to rpkm data frame, use this code:
-	>>> rpkm = []
-	>>> totReads = counts.sum(axis=0).to_dict()   # {'CAGRF7126-1213':44831299, ...}
-	>>> mtl = genedataset.geneset.Geneset().dataframe()['MedianTranscriptLength'].to_dict()
-	>>> for geneId,row in counts.iterrows():
-			if geneId in mtl:
-				rpkm.append([genedataset.dataset.rpkm(row[col],totReads[col],mtl[geneId]) for col in counts.columns])
-	>>> rpkm = pandas.DataFrame(rpkm, columns=counts.columns, index=[geneId for geneId in counts.index if geneId in mtl])
-	
-	Parameters:
-		rawCount: unnormalised summarised count for a gene
-		totalReads: total reads for all genes in a sample - ie. library size
-		medianTranscriptLength: median length of all transcripts in the gene.
-		
-	Returns:
-		float
-	"""
-	return numpy.power(10,9)*rawCount/totalReads/medianTranscriptLength
-	
-def probeGeneMap(arrayType, probeIds=[]):
-	"""
-	Return dictionaries of mapping between probe ids and gene ids. Uses the matching file
-	from data directory of this package to work out the mapping. Each Dataset instance should
-	use its own methods there for dealing with probe to gene mapping, as it is more efficient.
-	This function is mainly used when creating the data attached to each Dataset instance.
-
-	Parameters:
-		arrayType: {'IlluminaWG6','Affymetrix'}
-		probeIds: list of probe ids to restrict the search. Otherwise all probe ids will be searched.
-		
-	Returns:
-		dictionary with keys 'geneIdsFromProbeId','probeIdsFromGeneId','nonMatchingProbeIds' (see example below)
-		
-	Examples:
-	>>> print probeGeneMap("IlluminaWG6", probeIds=['ILMN_1212612'])
-	{'geneIdsFromProbeId': {'ILMN_1212612': ['ENSMUSG00000039601']}, 'nonMatchingProbeIds': [], 'probeIdsFromGeneId': {'ENSMUSG00000039601': ['ILMN_1212612']}}
-	
-	"""
-	filename = "%s/ProbeIdGeneIdMapping_%s.txt" % (dataDirectory(), arrayType)
-	df = pandas.read_csv(filename, sep="\t", index_col=0)
-	
-	if len(probeIds)>0:  # only interested in this subset
-		df = df.loc[probeIds]
-
-	# Work out a list of probe ids for each gene and vice versa
-	probeIdsFromGeneId = dict([(geneId,set()) for geneId in df['geneId']])
-	geneIdsFromProbeId = dict([(probeId,set()) for probeId in df.index])
-	nonMatchingProbeIds = [probeId for probeId in probeIds if probeId not in df.index] if len(probeIds)>0 else []
-	
-	# Because of multiple matches we have to return a list for each key
-	for probeId,row in df.iterrows():
-		if row['geneId']: probeIdsFromGeneId[row['geneId']].add(probeId)
-		if probeId: geneIdsFromProbeId[probeId].add(row['geneId'])
-		
-	return {'probeIdsFromGeneId': dict([(key,list(probeIdsFromGeneId[key])) for key in probeIdsFromGeneId]),
-			'geneIdsFromProbeId': dict([(key,list(geneIdsFromProbeId[key])) for key in geneIdsFromProbeId]),
-			'nonMatchingProbeIds': nonMatchingProbeIds}
-
-def probeIdsFromGeneId(geneId):
-	"""
-	Return a list of probeIds given a geneId. This function will search through all arrayTypes,
-	so probeGeneMap may be more efficient if arrayType is known.
-	"""
-	for filename in os.listdir(dataDirectory()):
-		if filename.startswith("ProbeIdGeneIdMapping"):
-			df = pandas.read_csv(filename, sep="\t", index_col=0)
-
 def createDatasetFile(destDir, **kwargs):
 	"""
 	Create a HDFStore file (.h5), which can be associated with a Dataset instance.
-	If platform_type=='microarray', we need expression matrix with probe ids, and mappings between probes and genes,
-	so supply expression, probeIdsFromGeneId and geneIdsFromProbeId.
-	If platform_type=='rna-seq', we need summarised counts, cpm and rpkm values.
-	
-	All DataFrames should have sample ids as columns and gene ids as row indices.
+	This file contains 2 pandas DataFrame objects as well as 1 pandas Series object.
+		
+	The "/dataframe/expression" object should have sample ids as columns and feature ids as row indices.
 	===================== ====== ======
 	geneId                s01    s02 
 	===================== ====== ======
@@ -96,11 +23,6 @@ def createDatasetFile(destDir, **kwargs):
 	Parameters:
 		destDir: Destination directory for the file being created. Existing file of the same name will
 			be removed before writing.
-		name: Usually a short abbreviated name to associate with the dataset. Will be used as file name
-			for .h5 file unless 'name' key in attributes is specified and made to be different.
-			So "MyDataset" will create MyDataset.h5 file. Hence ensure it's file name compliant.
-		addVersionSuffix: (bool) default True. Adds version number to the filename if True,
-			so name='MyDataset', attributes={'version':'1.0',...} will create MyDataset.1.0.h5 file.
 			
 		attributes: dictionary describing the dataset, with following keys (all values are strings)
 			name: usually the same as name attribute above, but make it different if different filename
@@ -109,27 +31,20 @@ def createDatasetFile(destDir, **kwargs):
 			fullname: A more descriptive name for the dataset.
 			version: Some version string to associate with the dataset.
 			description: Description of the dataset.
-			platform_type: one of ['microarray','rna-seq']
-			platform_details: descriptive string for the platform, eg. "Illumina WG6 version 2"
+			expression_type: Description of the type of expression matrix, eg "cpm" or "tpm"
 			pubmed_id: id string to pubmed if published. Leave empty or None if not applicable.
 			species: one of ['MusMusculus','HomoSapiens']
-		samples: pandas DataFrame which has sample ids matching the columns of the expression matrix. Example:
+			
+		samples: (pandas.DataFrame) sample ids as index matching the columns of the expression matrix
 			sampleId	celltype	tissue
 			s01		LSK		bone marrow
 			s02		T1		peripheral blood
 			(sampleId must be the index of the DataFrame.)
 	
-		expression: pandas DataFrame which has sample ids as columns and probe ids as index (microarray only)
-			probeId		s01		s02
-			ILMN_1234	4.35	8.42
-			ILMN_4567	8.11	5.81
-		probeIdsFromGeneId: A dictionary of form {'ENSMUSG000004353':['ILMN_1234',...],...} (microarray only)
-		geneIdsFromProbeId: A dictionary of form {'ILMN_1234':['ENSMUSG000004353',...],...} (microarray only)
-			Both of these dictionaries allow for the possibility of multiple matches.
-		
-		counts: pandas DataFrame of raw counts summarised at genes (rna-seq only)
-		cpm: pandas DataFrame of counts per million values for each gene and sample (rna-seq only)
-		rpkm: pandas DataFrame of RPKM values for each gene and sample (rna-seq only)
+		expression: (pandas.DataFrame) sample ids as columns and feature ids as index
+			featureId		s01		s02
+			ENSG000003535	4.35	8.42
+			ENSG000004215	8.11	5.81
 
 	Returns:
 		A Dataset instance.
@@ -137,58 +52,29 @@ def createDatasetFile(destDir, **kwargs):
 	Example:
 		>>> attributes = {"name":"haemopedia",
 					  "fullname": "Haemopedia",
-					  "version": "1.0",
-					  "description": "Microarray expression of murine haematopoietic cells",
-					  "platform_type": "microarray",
-					  "platform_details": "Illumina WG6 version 2",
+					  "version": "2.0",
+					  "description": "RNA-seq expression of murine haematopoietic cells",
 					  "pubmed_id": None,
 					  "species": "MusMusculus"}
-		# If samples, expression, probeIdsFromGeneId, geneIdsFromProbeId have been set as above:
-		>>> createDatasetFile("/datasets", name="haemopedia", attributes=attributes, samples=samples,
-			expression=expression, probeIdsFromGeneId=probeIdsFromGeneId, geneIdsFromProbeId=geneIdsFromProbeId)
+		# If attributes, samples, expression have been set as above:
+		>>> createDatasetFile("/datasets", attributes=attributes, samples=samples, expression=expression)
 	"""
 	# Parse input
 	if destDir[-1]=='/':
 		destDir = destDir[:-1]
-	addVersionSuffix = kwargs.get('addVersionSuffix',True)
-	name = kwargs['name']
 	attributes = kwargs['attributes']
 	samples = kwargs['samples']
-	
-	expression = kwargs.get('expression')
-	probeIdsFromGeneId = kwargs.get('probeIdsFromGeneId',{})
-	geneIdsFromProbeId = kwargs.get('geneIdsFromProbeId',{})
-	
-	counts = kwargs.get('counts')
-	cpm = kwargs.get('cpm')
-	rpkm = kwargs.get('rpkm')
+	expression = kwargs['expression']
 
 	# Check data
 	
 	# Save all values to file
-	filepath = '%s/%s' % (destDir, name)
-	if addVersionSuffix and attributes.get('version'):
-		filepath = '%s.%s' % (filepath, attributes['version'])
-	filepath = filepath + '.h5'
+	filepath = '%s/%s.%s.h5' % (destDir, attributes['name'], attributes['version'])
 	if os.path.isfile(filepath): os.remove(filepath)
+	
 	pandas.Series(attributes).to_hdf(filepath, '/series/attributes')
 	samples.to_hdf(filepath, '/dataframe/samples')
-
-	if attributes['platform_type']=='microarray':
-		# Only keep probeIds which occur in expression matrix
-		pgi = dict([(geneId, probeIdsFromGeneId[geneId]) for geneId in probeIdsFromGeneId.keys() \
-			if pandas.notnull(geneId) and len([probeId for probeId in probeIdsFromGeneId[geneId] if probeId in expression.index])>0])
-		gpi = dict([(probeId, geneIdsFromProbeId[probeId]) for probeId in geneIdsFromProbeId.keys() \
-			if probeId in expression.index and len([geneId for geneId in geneIdsFromProbeId[probeId] if pandas.notnull(geneId)])>0])		
-		expression.to_hdf(filepath, '/dataframe/expression')
-		pandas.Series(pgi).to_hdf(filepath, '/series/probeIdsFromGeneId')
-		pandas.Series(gpi).to_hdf(filepath, '/series/geneIdsFromProbeId')
-	else:
-		counts.to_hdf(filepath, '/dataframe/counts')
-		cpm.to_hdf(filepath, '/dataframe/cpm')
-		rpkm.to_hdf(filepath, '/dataframe/rpkm')
-
-	return Dataset(filepath)
+	expression.to_hdf(filepath, '/dataframe/expression')
 	
 # ------------------------------------------------------------
 # Dataset class 
@@ -199,49 +85,28 @@ class Dataset(object):
 	including expression matrix, sample information, and various metadata associated with the dataset.
 
 	Attributes:
-		filepath: full path to the HDFStore file associated with this dataset instance
-		name: name of this dataset, derived either by 'name' key in or by basename of filepath if this key is not present
-			(eg: Dataset('/path/to/mydataset.h5').name wil be 'mydataset')
-		fullname: a more descriptive name stored within the HDFStore file.
-		species: one of ['MusMusculus','HomoSapiens']
-		platform_type: one of ['microarray','rna-seq']
-		isRnaSeqData: boolean value determined only by platform_type=='rna-seq'
+		filepath: (string) full path to the HDFStore file associated with this dataset instance
+		fullname: (string) a more descriptive name stored within the HDFStore file.
+		species: (string) eg. 'MusMusculus','HomoSapiens'
 		
 	"""
 	def __init__(self, pathToHdf):
 		self.filepath = pathToHdf
 		
-		self._attributes = pandas.read_hdf(self.filepath, '/series/attributes')
-		self.name = self._attributes['name'] if 'name' in self._attributes else os.path.splitext(os.path.basename(self.filepath))[0]
-		self.fullname = self._attributes['fullname']
-		self.species = self._attributes['species']
-		self.platform_type = self._attributes['platform_type']
-		self.isRnaSeqData = self.platform_type=='rna-seq'
+		self.attributes = pandas.read_hdf(self.filepath, '/series/attributes').to_dict()
+		self.name = self.attributes['name']
+		self.fullname = self.attributes['fullname']
+		self.species = self.attributes['species']
 		
 		# samples is a pandas DataFrame which describes samples and their groupings.
 		# sample_id	level	name	value	colour
 		# CAGRF9188-1460	0	sampleId	CAGRF9188-1460	#ffffff	
 		# CAGRF9188-1333	0	sampleId	CAGRF9188-1333	#ffffff
-		self._samples = pandas.read_hdf(self.filepath, '/dataframe/samples')		
-			
-		# expression data is held differently based on data type
-		if self.isRnaSeqData:
-			self._expression = {'counts': pandas.read_hdf(self.filepath, '/dataframe/counts'),
-								'cpm': pandas.read_hdf(self.filepath, '/dataframe/cpm'),
-								'rpkm': pandas.read_hdf(self.filepath, '/dataframe/rpkm')}
-		else:
-			self._expression = pandas.read_hdf(self.filepath, '/dataframe/expression')
-			self._probeIdsFromGeneId = pandas.read_hdf(self.filepath, '/series/probeIdsFromGeneId')
-			self._geneIdsFromProbeId = pandas.read_hdf(self.filepath, '/series/geneIdsFromProbeId')
+		self.samples = pandas.read_hdf(self.filepath, '/dataframe/samples')		
+		self.expression = pandas.read_hdf(self.filepath, '/dataframe/expression')
 		
 	def __repr__(self):
-		return "<Dataset name:%s species:%s, platform_type:%s>" % (self.name, self.species, self.platform_type)
-
-	def attributes(self):
-		"""Return a dictionary of attributes. Keys are
-		['fullname','version','description','platform_type','platform_details','pubmed_id','species']
-		"""
-		return self._attributes.to_dict()
+		return "<Dataset name:%s, %s samples>" % (self.name, len(self.samples))
 					
 	def hdfStore(self):
 		"""Return the HDF store file.
@@ -251,29 +116,26 @@ class Dataset(object):
 	# ------------------------------------------------------------
 	# Expression matrix related methods 
 	# ------------------------------------------------------------
-	def expressionMatrix(self, geneIds=None, datatype='rpkm', sampleGroupForMean=None):
-		"""Return pandas DataFrame of expression values matching geneIds.
+	def expressionMatrix(self, featureIds=None, sampleGroupForMean=None):
+		"""Return pandas DataFrame of expression values matching featureIds.
 	
 		Parameters:
-			geneIds: a list of gene ids eg: ['ENSG000003535',...] or a string 'ENSG0000003535' or None, 
+			featureIds: a list of row ids eg: ['ENSG000003535',...] or a string 'ENSG0000003535' or None, 
 				in which case the full expression matrix is returned.
-			datatype: one of ['counts','rpkm','cpm'] if self.isRnaSeqData is True, ignored if False.
 			sampleGroupForMean: a sample group name eg 'celltype' which will be used to return the mean
 				over the sample ids.
 				
 		Returns:
 			pandas.DataFrame instance	
 		"""
-		df = self._expression[datatype] if self.isRnaSeqData else self._expression
+		df = self.expression
 		
-		if isinstance(geneIds, str) or isinstance(geneIds, unicode):	# assume single gene was specified
-			geneIds = [geneIds]
+		if isinstance(featureIds, six.string_types):	# assume single feature was specified
+			featureIds = [featureIds]
 		
 		# work out which row index to use based on platform type
-		if geneIds is not None and len(geneIds)>0:
-			index = set(geneIds).intersection(set(df.index)) if self.isRnaSeqData else \
-				set(self.probeIdsFromGeneIds(geneIds=geneIds)).intersection(set(df.index))
-				#[probeId for geneId,probeId in self._probeIdsFromGeneId.iteritems() if geneId in geneIds]
+		if featureIds is not None and len(featureIds)>0:
+			index = set(featureIds).intersection(set(df.index))
 		else:
 			index = df.index
 		
@@ -290,133 +152,52 @@ class Dataset(object):
 			
 		return df
 		
-	def expressionValues(self, geneIds=[]):
-		"""
-		Return a dictionary of expression values matching geneIds.
-		
-		Example:
-			>>> expressionValues(geneIds=['ENSMUSG00000019982','ENSMUSG00000005672'])
-			{'values': 
-				{
-					'ILMN_2683910':{'B.1':1.2, ...},
-					'ILMN_2752817':{'B.1':2.2, ...}
-				},
-			 'featureGroups': {'Gene1':['ILMN_2683910'], ...},
-			 'cpm': {}
-			}
-		"""
-		if isinstance(geneIds, str) or isinstance(geneIds, unicode):	# assume single gene was specified
-			geneIds = [geneIds]
-		cpm = {}
-
-		if self.isRnaSeqData:
-			rowIds = set(self._expression['rpkm'].index).intersection(set(geneIds))
-			df = self._expression['rpkm'].loc[rowIds]
-			cpm = dict([(rowId,row.to_dict()) for rowId,row in self._expression['cpm'].loc[rowIds].iterrows()])
-			featureGroups = dict([(index,[index]) for index in df.index])
-		else:	# get matching probeIds to use as row index
-			df = self._expression.loc[self.probeIdsFromGeneIds(geneIds=geneIds)]
-			featureGroups = self.probeIdsFromGeneIds(geneIds=geneIds, returnType="dict")
-		
-		# return a dictionary
-		return {'values':dict([(rowId,row.to_dict()) for rowId,row in df.iterrows()]), 'featureGroups':featureGroups, 'cpm':cpm}
-		
+				
 	def totalReads(self):
 		"""Return a dictionary that looks like {'CAGRF7126-1213':44831299, ...}
 		which holds the total number of reads (basically sum of all raw reads) keyed on sample id.
-		Return an empty dictionary for microarray data
 		"""
-		if not self.isRnaSeqData: return {}
-		return self._expression['/dataframe/counts'].sum(axis=0).to_dict()
+		return self.expression.sum(axis=0).to_dict()
 		
 	def valueRange(self):
-		"""Return a list of [min,max] value for the whole dataset if it's microarray data.
+		"""Return a list of [min,max] value for the whole dataset.
 		"""
-		df = self._expression['rpkm'] if self.isRnaSeqData else self._expression
-		return [df.min().min(), df.max().max()]
+		return [self.expression.min().min(), self.expression.max().max()]
 			
 	def correlation(self, featureId):
 		"""
 		Return a dictionary of correlation scores for each feature id in the dataset, eg: {'ENSMUSG0000034355':0.343, ...}
-		Each value is the correlation between featureId and each feature in the appropriate expression matrix.
-		featureId must be a member of the dataset (ie. probe id for microarray data). Otherwise None is returned.
+		Each value is the correlation between featureId and each feature in the expression matrix.
+		featureId must be one of the row indices of the dataset. Otherwise None is returned.
 		In this case only the keys contained in this dictionary are returned.
 		"""
 		from scipy.stats.stats import pearsonr
 		
-		# The methods are quite different for rna-seq vs microarray datasets
-		df = self._expression['rpkm'] if self.isRnaSeqData else self._expression
+		# Use log2
+		df = numpy.log2(self.expression + 1)
 		if featureId not in df.index: return None
-		
-		if self.isRnaSeqData:	# use log2 rpkm values
-			df = numpy.log2(df+1)		
-		
+				
 		# values for featureId
 		values = df.loc[featureId]
 			
 		# loop through all features and calculate correlation
 		score = {}
 		for featureId,row in df.iterrows():
-			if self.isRnaSeqData and row.max()==0: continue
+			if row.max()==0: continue
 			corr = pearsonr(values, row)[0]   # only need correlation and not the p value
 			if pandas.notnull(corr):   # null can happen if row is all zeros (or all the same values => zero covariance)
 				score[featureId] = corr
 
-		if self.isRnaSeqData:
-			return score
-		else:	# return gene ids as keys instead of probe ids, using highest value probe per gene
-			scoreModified = {}
-			for geneId,probeIds in self._probeIdsFromGeneId.iteritems():
-				scorelist = [score[probeId] for probeId in probeIds if probeId in score]
-				if scorelist:
-					scoreModified[geneId] = max(scorelist)
-			return scoreModified
-		
-	# ------------------------------------------------------------
-	# Probe and genes 
-	# ------------------------------------------------------------		
-	def probeIdsFromGeneIds(self, geneIds=[], returnType="list"):
-		"""Return probe ids matching geneIds.
-		
-		Parameters:
-			geneIds: a list of gene ids
-			returnType: {'list', 'dict'}
-		
-		Returns:
-			If returnType=='list': returns a flat list of probe ids
-			If returnType=='dict': returns a dictionary of lists, eg: {'gene1':['probe1'],...}
-		"""
-		# The following is really really slow
-		#index = set(self._probeIdsFromGeneId.index).intersection(set(geneIds))
-		#return self._probeIdsFromGeneId.loc[index] if len(index)>0 else pandas.Series()
-		
-		pfgi = self._probeIdsFromGeneId
-		if returnType=="list":
-			return sum([pfgi[geneId] for geneId in geneIds if geneId in pfgi], [])
-		elif returnType=="dict":
-			return dict([(geneId, pfgi[geneId]) for geneId in geneIds if geneId in pfgi])
-		
-	def geneIdsFromProbeIds(self, probeIds=[], returnType="list"):
-		"""Return gene ids matching probeIds.
-
-		Parameters:
-			probeIds: a list of probe ids
-			returnType: {'list', 'dict'}
-		
-		Returns:
-			If returnType=='list': returns a flat list of gene ids
-			If returnType=='dict': returns a dictionary of lists, eg: {'probe1':['gene1'],...}
-		"""
-		gfpi = self._geneIdsFromProbeId
-		if returnType=="list":
-			return sum([gfpi[probeId] for probeId in probeIds if probeId in gfpi], [])
-		elif returnType=="dict":
-			return dict([(probeId, gfpi[probeId]) for probeId in probeIds if probeId in gfpi])
-				
+		return score				
 		
 	# ------------------------------------------------------------
 	# Sample related methods 
 	# ------------------------------------------------------------
+	def sampleTable(self):
+		"""Return a pandas data frame of the samples table.
+		"""
+		return self.samples
+		
 	def sampleGroups(self):
 		"""Return a list of sample group names eg: ["celltype","tissue"]
 		"""
@@ -445,7 +226,7 @@ class Dataset(object):
 		groupBy specification. So it's possible to return {'Stem Cell':['LSK','STHSC'], 'B Cells':['LSK','B1']},
 		if there is a sample id which has been assigned to ('LSK','Stem Cell') and another to ('LSK','B Cells') by mistake.
 		"""
-		df = self._samples
+		df = self.samples
 	
 		if sampleGroup in df.columns and groupBy in df.columns: # group each item by sample ids, then substitute items from sampleGroup
 			sampleIdsFromGroupBy = dict([(item, df[df[groupBy]==item].index.tolist()) for item in set(df[groupBy])])
@@ -472,7 +253,7 @@ class Dataset(object):
 		"""Return a list of sample ids, eg: ["sample1","sample2"].
 		If either of sampleGroup or sampleGroupItem is None, returns all sampleIds.
 		"""
-		df = self._samples
+		df = self.samples
 		if sampleGroup and sampleGroupItem:
 			return df[df[sampleGroup]==sampleGroupItem].index.tolist()
 		else:
@@ -483,7 +264,7 @@ class Dataset(object):
 		eg: {'celltype': {'B':['s1','s2',...], ...}, ... }
 		"""
 		dict = {}
-		df = self._samples
+		df = self.samples
 		for sampleGroup in df.columns:
 			dict[sampleGroup] = {}
 			for sampleId,value in df[sampleGroup].iteritems():
@@ -492,42 +273,34 @@ class Dataset(object):
 				dict[sampleGroup][value].append(sampleId)
 		return dict
 	
-	def sampleTable(self):
-		"""Return a pandas DataFrame of the entire sample table.
-		"""
-		return self._samples
 		
 # ------------------------------------------------------------
 # Tests - eg. nosetests dataset.py
 # ------------------------------------------------------------
-def test_utilityFunctions():
-	# rpkm
-	assert rpkm(1022, 34119529, 2566)==11
-	
-	# probeGeneMap
-	pgm = probeGeneMap("IlluminaWG6", probeIds=['ILMN_1212612','ILMN_1213657'])
-	assert pgm['probeIdsFromGeneId']['ENSMUSG00000039601']==['ILMN_1212612']
-	assert len(pgm['geneIdsFromProbeId']['ILMN_1213657'])==17
+def test_createDatasetFile():
+	attributes = {"name":"test",
+				  "fullname": "Test Dataset",
+				  "version": "1.0",
+				  "description": "Created as part of daset test function",
+				  "pubmed_id": None,
+				  "species": "MusMusculus"}
+	samples = pandas.DataFrame([['B1','B Cell Lineage'],['B2','B Cell Lineage']], index=['sample1','sample2'], columns=['celltype','cell_lineage'])
+	expression = pandas.DataFrame([[3,0],[5,2],[0,4]], index=['gene1','gene2','gene3'], columns=['sample1','sample2'])
+	createDatasetFile("/tmp", attributes=attributes, samples=samples, expression=expression)
 
-def test_metadata():
-	ds = Dataset("%s/testdata.h5" % dataDirectory())	
-	assert ds.platform_type=="microarray"
-	assert not ds.isRnaSeqData
+def test_attributes():
+	ds = Dataset("/tmp/test.1.0.h5")
 	assert ds.species=="MusMusculus"
-	
-def test_probeIdGeneIdMapping():
-	ds = Dataset("%s/testdata.h5" % dataDirectory())	
-	assert ds.probeIdsFromGeneIds(geneIds=['gene1'])==['probe1']
-	assert ds.probeIdsFromGeneIds()==[]
-	assert ds.probeIdsFromGeneIds(geneIds=['gene2'], returnType="dict")=={'gene2':['probe2','probe3']}
-	
+	assert ds.name=="test"
+	assert ds.attributes['pubmed_id'] is None
+
 def test_expressionMatrix():
-	ds = Dataset("%s/testdata.h5" % dataDirectory())
-	assert ds.expressionMatrix()['s01'].tolist()==[3.45,5.54,0]
-	assert ds.expressionMatrix(sampleGroupForMean='celltype').at['probe2','B1']==2.77
-	
+	ds = Dataset("/tmp/test.1.0.h5")
+	assert ds.expressionMatrix()['sample1'].tolist()==[3,5,0]
+	assert ds.expressionMatrix(sampleGroupForMean='celltype').at['gene2','B2']==2
+'''	
 def test_expressionValues():
-	ds = Dataset("%s/testdata.h5" % dataDirectory())	
+	ds = Dataset("%s/testdata.h5" % dataDirectory())
 	ev = ds.expressionValues(geneIds=['gene2'])
 	assert ev['values']['probe2']['s01']==5.54
 	assert ev['featureGroups']['gene2']==['probe2','probe3']
@@ -543,4 +316,4 @@ def test_samples():
 	assert ds.sampleIds()==['s01','s02','s03','s04']
 	assert ds.sampleIds(sampleGroup='celltype', sampleGroupItem='B1')==['s01','s02']
 	assert ds.sampleIdsFromSampleGroups()['tissue']['BM']==['s01', 's02', 's03', 's04']
-	
+'''

@@ -11,17 +11,17 @@ requires = [
     ]
 
 setup(name='genedataset',
-      version='0.6',
+      version='1.0',
       description='Store and access gene expression datasets and gene definitions.',
       long_description=README,
       classifiers=[
-        "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3.6, 2.7",
         "Topic :: Scientific/Engineering :: Bio-Informatics",
         ],
       author='Jarny Choi',
-      author_email='jchoi@wehi.edu.au',
+      author_email='jarnyc@unimelb.edu.au',
       url='https://github.com/jarny/genedataset',
-      keywords='gene microarray rna-seq',
+      keywords='gene expression dataset rna-seq',
       packages=find_packages(),
       include_package_data=True,
       zip_safe=False,

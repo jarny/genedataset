@@ -1,11 +1,9 @@
 """
-Geneset class is a list of information about genes. It is not currently a collection of individual
-"Gene" objects, because I find most controller code is concerned about fetching a collection of genes
-while view code is often concerned about individual gene properties (to show in a table for example),
-but by this stage we can just pass a json object anyway.
+Geneset class is a list of information about genes. It comes with annotated gene information sourced from 
+Ensembl and Entrez (NCBI) for mouse and human genes, to make it easier to work with python scripts in bioinformatics.
 
-object with self.dataframe which contains information about each gene per row. This data frame has columns:
-['EnsemblId','Species','EntrezId','GeneSymbol','Synonyms','Description','MedianTranscriptLength','Orthologue']
+The main object which contains the information is a pandas data frame, with each gene per row. This data frame has columns:
+['EnsemblId','Species','EntrezId','GeneSymbol','Synonyms','Description','TranscriptLengths','Orthologue']
 where 'EnsemblId' is the index.
 """
 import pandas, os, sys, re, copy
@@ -20,7 +18,7 @@ class Geneset(object):
 	There is also metadata associated with the Geneset which specifies origins of data and 
 	"""
 	def __init__(self, name='unnamed', description=''):
-		self._datafile = '%s/Genes.h5' % dataDirectory()
+		self._datafile = '{}/Genes.h5'.format(dataDirectory())
 		self._dataframe = pandas.read_hdf(self._datafile, 'data')
 		self._metadata = pandas.read_hdf(self._datafile, 'metadata')
 
@@ -68,9 +66,40 @@ class Geneset(object):
 		else:
 			return list(set(self._dataframe['Species']))
 		
+	def subsetFromGeneIds(self, geneIds):
+		"""
+		Return a copy of this instance, but with a subset of genes based on geneIds. Gene ids not found in this Geneset
+		will be ignored.
+		
+		Parameters:			
+			geneIds: list of gene ids such as ['ENSMUSG00000039601', ...]
+			
+		Returns:
+			A new Geneset instance with the subset of genes.			
+		"""
+		gs = copy.copy(self)
+		gs._dataframe = gs._dataframe.loc[[item for item in geneIds if item in gs._dataframe.index]]
+		return gs
+		
+	def subsetFromGeneSymbols(self, geneSymbols):
+		"""
+		Return a copy of this instance, but with a subset of genes based on gene symbols. This method is for exact matching -
+		use subset() for more loose matching.
+		
+		Parameters:			
+			geneSymbols: list of gene symbols such as ['Gata1', ...]
+			
+		Returns:
+			A new Geneset instance with the subset of genes.			
+		"""
+		gs = copy.copy(self)
+		gs._dataframe = gs._dataframe[gs._dataframe['GeneSymbol'].isin(geneSymbols)]
+		return gs
+		
 	def subset(self, *args, **kwargs):
 		"""
-		Return a copy of this instance, but with a subset of genes.
+		Return a copy of this instance, but with a subset of genes based on query strings. Slower than subsetFromGeneIds
+		or subsetFromGeneSymbols but more generic.
 		
 		Parameters:
 			list of query strings: such as Geneset().subset(['myb','ccr3']) or keyworded arguments
@@ -94,7 +123,7 @@ class Geneset(object):
 		"""
 		gs = copy.copy(self)
 		queryStrings = kwargs['queryStrings'] if 'queryStrings' in kwargs else args[0] if args else []
-		if isinstance(queryStrings, str) or isinstance(queryStrings, unicode):	# assume queryString was specified as a string
+		if isinstance(queryStrings, str) or isinstance(queryStrings, bytes):	# assume queryString was specified as a string
 			queryStrings = [queryStrings]
 	
 		if len(queryStrings)==0:
@@ -176,92 +205,102 @@ class Geneset(object):
 	'''
 	
 '''
-Create the Genes.h5 file from source files:
+Create the Genes.h5 file from source files (Updated 2017-05-26). This requires downloading various data files in text format
+and running this function, which will create the .h5 file containing a pandas dataframe. An example:
+	create_full_geneset(outfile='/Users/jchoi/projects/dev/genedataset/python3/genedataset/data/Genes.h5',
+						entrezFiles = ['/Users/jchoi/projects/received/Entrez/Mus_musculus.gene_info', 
+									   '/Users/jchoi/projects/received/Entrez/Homo_sapiens.gene_info'],
+						ensemblFiles = ['/Users/jchoi/projects/received/Ensembl/EnsemblGenes_MusMusculus.v88.GRCh38.txt',
+										'/Users/jchoi/projects/received/Ensembl/EnsemblGenes_HomoSapiens.v88.GRCh38.txt'],
+						transcriptLengthFiles = ['/Users/jchoi/projects/received/Ensembl/TranscriptLength_MusMusculus.v88.GRCh38.txt',
+												 '/Users/jchoi/projects/received/Ensembl/TranscriptLength_HomoSapiens.v88.GRCh38.txt'],
+						orthologueFile = '/Users/jchoi/projects/received/Ensembl/MouseHumanOrthologues.v88.GRCh38.txt',
+						ensemblVersion = 'Ensembl Genes 88, GRCh38',
+						entrezDataDate = '2017-05-26')
+Note that mouse file should always come before the human file within each pair.
+Beware of Entrez gene id being parsed as integer by default - this can cause problems in various places.
+
+The source data files come from:
 	Ensembl files downloaded from http://ensembl.org/biomart
 	Entrez files downloaded from ftp://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/
-	Mouse-human orthologue file downloaded from ftp://ftp.informatics.jax.org/pub/reports/index.html#homology
 
-Format of the Ensembl files: (Be careful when selecting attributes to download from biomart - columns are in the same order as selection.)
-	Ensembl Gene ID	EntrezGene ID	Associated Gene Name	Description
-	ENSMUSG00000064372		mt-Tp	mitochondrially encoded tRNA proline [Source:MGI Symbol;Acc:MGI:102478]
-	ENSMUSG00000064371		mt-Tt	mitochondrially encoded tRNA threonine [Source:MGI Symbol;Acc:MGI:102473]
-	ENSMUSG00000064370	17711	mt-Cytb	mitochondrially encoded cytochrome b [Source:MGI Symbol;Acc:MGI:102501]
+Format of the Ensembl gene files: (Be careful when selecting attributes to download from biomart - columns are in the same order as selection.)
+	Gene stable ID	NCBI gene ID	Gene name	Gene description
+	ENSMUSG00000064336		mt-Tf	mitochondrially encoded tRNA phenylalanine [Source:MGI Symbol;Acc:MGI:102487]
+	ENSMUSG00000064337		mt-Rnr1	mitochondrially encoded 12S rRNA [Source:MGI Symbol;Acc:MGI:102493]
 
-Format of the Entrez files:
-	#Format: tax_id GeneID Symbol LocusTag Synonyms dbXrefs chromosome map_location description type_of_gene Symbol_from_nomenclature_authority Full_name_from_nomenclature_authority Nomenclature_status Other_designations Modification_date (tab is used as a separator, pound sign - start of a comment)
-	10090	11287	Pzp	-	A1m|A2m|AI893533|MAM	MGI:MGI:87854|Ensembl:ENSMUSG00000030359|Vega:OTTMUSG00000022212	6	6 F1-G3|6 63.02 cM	pregnancy zone protein	protein-coding	Pzp	pregnancy zone protein	O	alpha 1 macroglobulin|alpha-2-M|alpha-2-macroglobulin	20140927
-Note that column headers are NOT separated by tabs in this file, while columns themselves are! 
-This is annoying for parsing the file and I simply used a normal list rather than a pandas data frame for reading this file.
-
-Format of transcript length files:
-	Ensembl Gene ID	Ensembl Transcript ID	Transcript length
-	ENSG00000210049	ENST00000387314	71
-	ENSG00000211459	ENST00000389680	954
+Format of Ensembl transcript length files:
+	Gene stable ID	Transcript stable ID	Transcript length (including UTRs and CDS)
+	ENSMUSG00000064372	ENSMUST00000082423	67
+	ENSMUSG00000064371	ENSMUST00000082422	67
 
 Format of the mouse-human orthologue file:
-	Human Marker Symbol	Human Entrez Gene ID	HomoloGene ID	Mouse Marker Symbol	MGI Marker Accession ID	High-level Mammalian Phenotype ID (space-delimited)
-	A1BG	  1	11167	A1bg	  MGI:2152878		
-	A1CF	  29974	16363	A1cf	  MGI:1917115	  MP:0010768 MP:0005384	
+	Gene stable ID	Gene name	Human gene stable ID	Human gene name
+	ENSMUSG00000064372	mt-Tp		
+	ENSMUSG00000064370	mt-Cytb	ENSG00000198727	MT-CYB
+
+Format of the Entrez files:
+	#tax_id	GeneID	Symbol	LocusTag	Synonyms	dbXrefs	chromosome	map_location	description	type_of_gene	Symbol_from_nomenclature_authority	Full_name_from_nomenclature_authority	Nomenclature_status	Other_designations	Modification_date
+	9606	1	A1BG	-	A1B|ABG|GAB|HYST2477	MIM:138670|HGNC:HGNC:5|Ensembl:ENSG00000121410|Vega:OTTHUMG00000183507	19	19q13.43	alpha-1-B glycoprotein	protein-coding	A1BG	alpha-1-B glycoprotein	O	alpha-1B-glycoprotein|HEL-S-163pA|epididymis secretory sperm binding protein Li 163pA	20170508
+	9606	2	A2M	-	A2MD|CPAMD5|FWP007|S863-7	MIM:103950|HGNC:HGNC:7|Ensembl:ENSG00000175899|Vega:OTTHUMG00000150267	12	12p13.31	alpha-2-macroglobulin	protein-coding	A2M	alpha-2-macroglobulin	O	alpha-2-macroglobulin|C3 and PZP-like alpha-2-macroglobulin domain-containing protein 5|alpha-2-M	20170513
 
 '''
 def create_full_geneset(outfile, ensemblFiles, entrezFiles, transcriptLengthFiles, orthologueFile, 
-	ensemblPattern = re.compile(".*Ensembl:(\w+)|"), ensemblVersion = 'Ensembl Genes 77',
+	ensemblPattern = re.compile(".*Ensembl:(\w+)|"), ensemblVersion = 'Ensembl Genes 88',
 	entrezDataDate = '', entrezDataUrl = 'ftp://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/'):
 	
-	import numpy
+	import pandas, numpy
+			
+	# Read orthologue file. Multiple matches are allowed so values of these dictionaries are lists.
+	print("Parsing orthologue file:", orthologueFile)
+	orth = pandas.read_csv(orthologueFile, sep='\t').fillna('')
 	
-	# Read transcript length file and store transcript lengths on ensembl gene id
-	transcriptLengths = {}
-	for file in transcriptLengthFiles:
-		filelines = open(file).read().split('\n')
-		for line in filelines[1:]:			
-			cols = line.split('\t')
-			if len(cols)<3 or not cols[0].startswith('ENS'): continue   # there are some LRG entries in human file
-			if cols[0] not in transcriptLengths: transcriptLengths[cols[0]] = []
-			transcriptLengths[cols[0]].append(int(cols[2]))
+	mouseIdsFromHumanId, humanIdsFromMouseId = {}, {}
+	for index,row in orth.iterrows():
+		humanId = row['Human gene stable ID'].strip()
+		mouseId = row['Gene stable ID'].strip()
+		if humanId and mouseId:	# multiple matches are possible
+			if humanId not in mouseIdsFromHumanId: mouseIdsFromHumanId[humanId] = []
+			if mouseId not in humanIdsFromMouseId: humanIdsFromMouseId[mouseId] = []
+			mouseIdsFromHumanId[humanId].append(mouseId)
+			humanIdsFromMouseId[mouseId].append(humanId)
 	
-	# Read orthologue file. Use mouse gene symbol and human Entrez gene ids, because orthologue file does not have mouse Entrez ids.
-	# Multiple matches are allowed so values of these dictionaries are lists.
-	mouseSymbolsFromHumanId, humanIdsFromMouseSymbol = {}, {}
-	filelines = open(orthologueFile).read().split('\n')
-	for line in filelines:
-		cols = line.split('\t')
-		if len(cols)<4: continue
-		humanId = cols[1].strip()
-		mouseSymbol = cols[3].strip()
-		if humanId and mouseSymbol:
-			# multiple matches are possible 226 out of 16815 human ids have more than 1 mouse symbols,
-			# 104 out of 17145 mouse symbols have more than 1 human ids
-			if humanId not in mouseSymbolsFromHumanId: mouseSymbolsFromHumanId[humanId] = []
-			if mouseSymbol not in humanIdsFromMouseSymbol: humanIdsFromMouseSymbol[mouseSymbol] = []
-			mouseSymbolsFromHumanId[humanId].append(mouseSymbol)
-			humanIdsFromMouseSymbol[mouseSymbol].append(humanId)
-
+	# These will store the info at different stages
 	geneInfoFromEntrezId = {}	# {'11287':{'ensemblId':'ENSMUSG00000030359', 'synonyms':'A1m|A2m|AI893533|MAM'},...}
 	geneInfoFromEnsemblId = {}	# {'ENSMUSG00000030359':{'entrezIds':['11287'], 'synonyms':['A1m|A2m|AI893533|MAM'], 'symbol':'Pzp'},...}
 	ensemblData = {}
 	frameData = []	# will be used as the final data frame with these columns
-	frameColumns = ['EnsemblId','Species','EntrezId','GeneSymbol','Synonyms','Description','MedianTranscriptLength','Orthologue']
+	frameColumns = ['EnsemblId','Species','EntrezId','GeneSymbol','Synonyms','Description','TranscriptLengths','Orthologue']
 
 	# Loop through each species
-	for fileIndex in range(len(entrezFiles)):
-		species = 'MusMusculus' if fileIndex==0 else 'HomoSapiens'
+	for fileIndex,species in enumerate(['MusMusculus','HomoSapiens']):
 
-		# Read entrezFiles and store Ensembl ids and synonyms keyed on entrez id
-		filelines = open(entrezFiles[fileIndex]).read().split('\n')		
-				
-		for line in filelines[1:]:
-			cols = line.split('\t')
-			if len(cols)<5: continue
-			# extract ensembl id from column 6 which looks like MGI:MGI:87854|Ensembl:ENSMUSG00000030359|Vega:OTTMUSG00000022212
-			m = ensemblPattern.match(cols[5])
-			ensemblId = m.group(1) if m and m.group(1) else '' # actual ensembl id portion of the pattern match
-			geneInfoFromEntrezId[cols[1]] = {'ensemblId':ensemblId, 'synonyms':cols[4], 'symbol':cols[2]}
+		# Read transcript length file and store transcript lengths on ensembl gene id
+		print("Parsing transcript length file:", transcriptLengthFiles[fileIndex])	
+		df = pandas.concat([pandas.read_csv(filepath, sep='\t') for filepath in transcriptLengthFiles], ignore_index=True)
+		transcriptLengths = {}
+		for index,row in df.iterrows():
+			if row['Gene stable ID'] not in transcriptLengths:
+				transcriptLengths[row['Gene stable ID']] = []
+			transcriptLengths[row['Gene stable ID']].append(row[2])
+		print("Transcript lengths of ENSMUSG00000000031 is", transcriptLengths['ENSMUSG00000000031'])
+	
+		# Read entrez file and store Ensembl ids and synonyms keyed on entrez id
+		entrez = pandas.read_csv(entrezFiles[fileIndex], sep='\t', index_col=1, dtype={'GeneID':str})
+		entrez.index = entrez.index.astype(str)  # note that dtype={'GeneID':str} within read_csv doesn't work!
+		print("\nParsing Entrez file:", entrezFiles[fileIndex])
+		print("Number of rows:", len(entrez), "Are there duplicate gene ids?", len(entrez.index)!=len(set(entrez.index)))
 		
+		for index,row in entrez.iterrows():
+			# extract ensembl id from dbXrefs columns which looks like MGI:MGI:87854|Ensembl:ENSMUSG00000030359|Vega:OTTMUSG00000022212
+			m = ensemblPattern.match(row['dbXrefs'])
+			ensemblId = m.group(1) if m and m.group(1) else '' # actual ensembl id portion of the pattern match
+			geneInfoFromEntrezId[index] = {'ensemblId':ensemblId, 'synonyms':row['Synonyms'], 'symbol':row['Symbol']}
+			
 		# "invert" geneInfoFromEntrezId so that ensemblId is the key - may produce multiple matches of entrez ids
 		# For cases where there is no ensembl id found for the entrez gene, match on symbol
 		geneInfoFromSymbol = {}	# {'Rnu11':{'entrezIds':['353373'], 'synonyms':['MBII-407|Mirn801|mir-801|mmu-mir-801']},...}
-		for entrezId,value in geneInfoFromEntrezId.iteritems():
+		for entrezId,value in geneInfoFromEntrezId.items():
 			if value['ensemblId']:
 				if value['ensemblId'] not in geneInfoFromEnsemblId: geneInfoFromEnsemblId[value['ensemblId']] = {'entrezIds':[], 'synonyms':[]}
 				geneInfoFromEnsemblId[value['ensemblId']]['entrezIds'].append(entrezId)
@@ -270,28 +309,39 @@ def create_full_geneset(outfile, ensemblFiles, entrezFiles, transcriptLengthFile
 				if value['symbol'] not in geneInfoFromSymbol: geneInfoFromSymbol[value['symbol']] = {'entrezIds':[], 'synonyms':[]}
 				geneInfoFromSymbol[value['symbol']]['entrezIds'].append(entrezId)
 				geneInfoFromSymbol[value['symbol']]['synonyms'].append(value['synonyms'])
-
-		# Read ensemblFiles and construct the gene info. Note that duplicate ensembl ids are possible in this data frame
-		ensemblInfo = pandas.read_csv(ensemblFiles[fileIndex], sep='\t', index_col=0, dtype={'EntrezGene ID':str, 'Description':str})
-		print 'species: %s, ensembl data rows: %s' % (species, ensemblInfo.shape[0])
 		
-		for ensemblId,row in ensemblInfo.iterrows():
-			if not ensemblId.startswith('ENS'): continue  # there are some LRG_ genes in there
+		# Read ensembl file and construct the gene info. Note that duplicate ensembl ids are possible in this data frame
+		print("\nParsing Ensembl gene file:", ensemblFiles[fileIndex])
+		ensembl = pandas.read_csv(ensemblFiles[fileIndex], sep='\t', index_col=0, dtype={'NCBI gene ID':str, 'Gene description':str})
+		print("Number of rows:", len(ensembl), "Are there duplicate gene ids?", len(ensembl.index)!=len(set(ensembl.index)))
+		
+		missingGeneSymbol, missingEntrezId, nonMatchingEntrezId = 0, 0, 0
+		for ensemblId,row in ensembl.iterrows():
+			if not ensemblId.startswith('ENS'): continue  # there may be some LRG_ genes in there
+
+			entrezId = row['NCBI gene ID']
+			geneSymbol = row['Gene name']
 			
-			entrezId = row['EntrezGene ID']
-			geneSymbol = row['Associated Gene Name']
+			if pandas.isnull(geneSymbol):
+				missingGeneSymbol
+				continue
 			
-			if pandas.isnull(geneSymbol): continue
-			
-			if pandas.isnull(entrezId):	# substitute entrez id coming from Entrez, but only if there is a unique match
-				if ensemblId in geneInfoFromEnsemblId and len(geneInfoFromEnsemblId[ensemblId]['entrezIds'])==1:
+			if pandas.isnull(entrezId):	
+				# substitute entrez id coming from Entrez, but what if there are multiple matches?
+				# I used to insist on keeping the gene only if there was a unique match here, but now just take the first one
+				# - note this is quite arbitrary!
+				if ensemblId in geneInfoFromEnsemblId:
 					entrezId = geneInfoFromEnsemblId[ensemblId]['entrezIds'][0]
-				elif geneSymbol in geneInfoFromSymbol and len(geneInfoFromSymbol[geneSymbol]['entrezIds'])==1:
+				elif geneSymbol in geneInfoFromSymbol:
 					entrezId = geneInfoFromSymbol[geneSymbol]['entrezIds'][0]
 				else:
+					# These genes with missing entrez ids are mostly pseudogenes (eg 'Gm26540'), which we will leave out here
+					missingEntrezId += 1
 					continue
+					
 			else:	# there is entrez id here but check to see if it matches what Entrez says
 				if ensemblId in geneInfoFromEnsemblId and (entrezId not in geneInfoFromEnsemblId[ensemblId]['entrezIds']):
+					nonMatchingEntrezId += 1
 					continue
 
 			# synonym comes from matching entrez id; first look in geneInfoFromEnsemblId since it has already resolved multiple entrez id matches
@@ -303,20 +353,28 @@ def create_full_geneset(outfile, ensemblFiles, entrezFiles, transcriptLengthFile
 				synonyms = geneInfoFromSymbol[geneSymbol]['synonyms'][geneInfoFromSymbol[geneSymbol]['entrezIds'].index(entrezId)]
 			else:	# no synonyms
 				synonyms = ''
+			synonyms = synonyms.strip()
+			if synonyms=='-': synonyms = ''
 				
 			# remove source comment from description
-			description = row['Description'].split('[')[0] if pandas.notnull(row['Description']) else ''
+			description = row['Gene description'].split('[')[0] if pandas.notnull(row['Gene description']) else ''
 			
-			# add median transcript length
-			medianTranscriptLength = numpy.median(transcriptLengths[ensemblId]) if ensemblId in transcriptLengths else None
+			# add transcript lengths as a numpy array
+			transLengths = numpy.asarray(transcriptLengths.get(ensemblId,[]))
 			
 			if ensemblId not in ensemblData: ensemblData[ensemblId] = []
-			ensemblData[ensemblId].append([ensemblId, species, entrezId, geneSymbol, synonyms, description, medianTranscriptLength])
-	
-	# Merge rows with duplicate ensembl ids, create dictionaries useful for orthologue
+			ensemblData[ensemblId].append([ensemblId, species, entrezId, geneSymbol.strip(), synonyms, description.strip(), transLengths])
+			
+		print("Length of ensemblData:", len(ensemblData))
+		print("Rows dropped due to missing gene symbol:", missingGeneSymbol)
+		print("Rows dropped due to missing Entrez id:", missingEntrezId)
+		print("Rows dropped due to inconsistent Entrez id between Ensembl and Entrez:", nonMatchingEntrezId)
+		
+	# Merge rows with duplicate ensembl ids; also create a dictionary which will be used for orthologue info later
+	print("\nMerging rows with duplicate Ensembl ids")
 	filteredEnsemblData = {}
-	idSymbolFromId, idSymbolFromSymbol = {}, {}
-	for ensemblId,_list in ensemblData.iteritems():
+	idAndSymbolFromId = {}
+	for ensemblId,_list in ensemblData.items():
 		listToUse = []
 		if len(_list)==1:	# only one row
 			listToUse = _list[0]
@@ -328,29 +386,25 @@ def create_full_geneset(outfile, ensemblFiles, entrezFiles, transcriptLengthFile
 	
 		if listToUse:
 			filteredEnsemblData[ensemblId] = listToUse
-			idSymbolFromId[ensemblId] = '%s:%s' % (ensemblId, listToUse[3])
-			idSymbolFromSymbol[listToUse[3]] = '%s:%s' % (ensemblId, listToUse[3])
+			idAndSymbolFromId[ensemblId] = '{}:{}'.format(ensemblId, listToUse[3])
 	
 	frameData = []
-	for ensemblId,_list in filteredEnsemblData.iteritems():
+	for ensemblId,_list in filteredEnsemblData.items():
 		# Insert orthologue info
 		orth = ''
 		if _list[1]=='MusMusculus':
-			humanEntrezIds = humanIdsFromMouseSymbol.get(_list[3],[])	# list of orthologous human entrez ids
-			if humanEntrezIds:	# convert these into human ensembl ids, and fetch matching human symbols
-				ensemblIds = [geneInfoFromEntrezId[entrezId]['ensemblId'] for entrezId in humanEntrezIds if entrezId in geneInfoFromEntrezId]
-				orth = ','.join([idSymbolFromId[id] for id in ensemblIds if id in idSymbolFromId])
+			humanIds = humanIdsFromMouseId.get(ensemblId,[])	# list of orthologous human ensembl ids
+			if humanIds:	# fetch matching human info
+				orth = ','.join([idAndSymbolFromId[id] for id in humanIds if id in idAndSymbolFromId])
 		elif _list[1]=='HomoSapiens':
-			mouseSymbols = mouseSymbolsFromHumanId.get(_list[2],[])
-			if mouseSymbols:	# fetch matching mouse ids
-				orth = ','.join([idSymbolFromSymbol[symbol] for symbol in mouseSymbols if symbol in idSymbolFromSymbol])
+			mouseIds = mouseIdsFromHumanId.get(ensemblId,[])
+			if mouseIds:	# fetch matching mouse info
+				orth = ','.join([idAndSymbolFromId[id] for id in mouseIds if id in idAndSymbolFromId])
 		frameData.append(_list+[orth])
 
-	df = pandas.DataFrame(frameData, columns=frameColumns)
-	df = df.set_index('EnsemblId')
-	df.fillna('')	# hdf file writing doesn't like nan
-	print 'total data rows: %s (unique rows:%s)' % (df.shape[0], len(set(df.index)))
-
+	df = pandas.DataFrame(frameData, columns=frameColumns).set_index('EnsemblId').fillna('')	# hdf file writing doesn't like nan
+	print('\nCreating the final data frame - total data rows: {} (unique rows:{})'.format(df.shape[0], len(set(df.index))))
+	
 	# Write to file
 	df.to_hdf(outfile, '/data')
 	
@@ -359,25 +413,33 @@ def create_full_geneset(outfile, ensemblFiles, entrezFiles, transcriptLengthFile
 	pandas.Series(desc).to_hdf(outfile,'/metadata')
 
 
-def create_full_geneset_20160202():
-	create_full_geneset(outfile='/Users/jchoi/projects/dev/genedataset/genedataset/data/Genes.h5',
-						entrezFiles = ['/Users/jchoi/projects/received/Entrez/Mus_musculus.gene_info', '/Users/jchoi/projects/received/Entrez/Homo_sapiens.gene_info'],
-						ensemblFiles = ['/Users/jchoi/projects/received/Ensembl/EnsemblGenes_MusMusculus.v83.txt', '/Users/jchoi/projects/received/Ensembl/EnsemblGenes_HomoSapiens.v83.txt'],
-						transcriptLengthFiles = ['/Users/jchoi/projects/received/Ensembl/TranscriptLength_MusMusculus.v83.txt', '/Users/jchoi/projects/received/Ensembl/TranscriptLength_HomoSapiens.v83.txt'],
-						orthologueFile = '/Users/jchoi/projects/received/MGI/HMD_HumanPhenotype.rpt',
-						ensemblVersion = 'Ensembl Genes 83',
-						entrezDataDate = '2016-02-02')
+def create_full_geneset_20170526():
+	create_full_geneset(outfile='/Users/jchoi/projects/dev/genedataset/python3/genedataset/data/Genes.h5',
+						entrezFiles = ['/Users/jchoi/projects/received/Entrez/Mus_musculus.gene_info', 
+									   '/Users/jchoi/projects/received/Entrez/Homo_sapiens.gene_info'],
+						ensemblFiles = ['/Users/jchoi/projects/received/Ensembl/EnsemblGenes_MusMusculus.v88.GRCh38.txt',
+										'/Users/jchoi/projects/received/Ensembl/EnsemblGenes_HomoSapiens.v88.GRCh38.txt'],
+						transcriptLengthFiles = ['/Users/jchoi/projects/received/Ensembl/TranscriptLength_MusMusculus.v88.GRCh38.txt',
+												 '/Users/jchoi/projects/received/Ensembl/TranscriptLength_HomoSapiens.v88.GRCh38.txt'],
+						orthologueFile = '/Users/jchoi/projects/received/Ensembl/MouseHumanOrthologues.v88.GRCh38.txt',
+						ensemblVersion = 'Ensembl Genes 88, GRCh38',
+						entrezDataDate = '2017-05-26')
 
 
 # ------------------------------------------------------------
-# Tests - eg. nosetests dataset.py
+# Tests - eg. nosetests geneset.py
 # ------------------------------------------------------------
+def test_Geneset():
+	gs = Geneset()
+	assert gs.size()>60000
+	assert Geneset().subsetFromGeneIds(['ENSMUSG00000035448']).geneSymbols()[0]=='Ccr3'
+	assert Geneset().subsetFromGeneSymbols(['Ccr3']).geneIds()[0]=='ENSMUSG00000035448'
+	
 def test_subset():
 	gs = Geneset()
-	assert gs.size>60000
 	
 	# subset methods
-	gs = gs.subset(queryStrings=['ccr3'])
+	gs = gs.subset(queryStrings='ccr3')
 	assert set(gs.geneIds())==set(['ENSG00000183625', 'ENSMUSG00000035448'])
 	assert '"EnsemblId":"ENSG00000183625"' in gs.to_json()
 	
@@ -412,8 +474,9 @@ def test_geneSymbols():
 	assert gs.geneSymbols(returnType="dict")['ENSMUSG00000047591'] == 'Mafa'
 	
 def test_species():
-	gs = Geneset().subset(queryStrings=['ENSMUSG00000019982', 'ENSMUSG00000047591'], searchColumns=["GeneId"])	
+	assert set(Geneset().species(ignoreMixed=False))==set(['HomoSapiens','MusMusculus'])
+	gs = Geneset().subsetFromGeneIds(['ENSMUSG00000019982', 'ENSMUSG00000047591'])
 	assert gs.species()=='MusMusculus'
 	assert gs.species(ignoreMixed=False)==['MusMusculus']
 	gs = Geneset().subset(queryStrings='ccr3')
-	assert gs.species(ignoreMixed=False)==['MusMusculus','HomoSapiens']
+	print(gs.species())
