@@ -9,6 +9,11 @@ Some significant changes have been made in this version:
 3. Dataset no longer supports microarrays, so it's been simplified.
 4. The package supports both python 3 and 2 - tested on 2.7.14 and 3.6.3.
 
+## Installation
+```bash
+pip install -e genedataset
+```
+
 ## geneset
 geneset stores gene information combined from both Ensembl and NCBI/Entrez (mouse and human only), so that you can query it:
 ```python
@@ -27,7 +32,7 @@ gs.dataframe()
 dataset can store gene expression data so that it can be queried. The stored data consists of expression values (usually rna-seq) and sample data packaged into HDF5 format.
 ```python
 from genedataset import dataset
-ds = dataset.Dataset("genedataset/data/testdataset.h5")
+ds = dataset.Dataset("genedataset/data/testdata.1.0.h5")
 ds
  <Dataset name:testdata 4 samples>
 ds.expressionMatrix()

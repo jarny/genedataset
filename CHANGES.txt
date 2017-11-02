@@ -6,3 +6,4 @@
 0.5.1: Fixed a bug in dataset where correlation function could throw an error if zeros were encountered in expression values of rna-seq dataset.
 0.5.2: Previous fix still produces a warning in scipy/numpy if the row is all zeros, so fixed this.
 0.6: Added extra argument 'addVersionSuffix' to dataset.createDatasetFile() to control addition of version suffix to the filename (default True).
+1.0: Major upgrade. Now supports both python 2 and 3. Gene annotation has been upgraded to Ensembl v88. Dataset no longer supports microarrays, so is simplified. 

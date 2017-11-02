@@ -201,7 +201,7 @@ class Dataset(object):
 	def sampleGroups(self):
 		"""Return a list of sample group names eg: ["celltype","tissue"]
 		"""
-		return self._samples.columns.tolist()
+		return self.samples.columns.tolist()
 
 	def sampleGroupItems(self, sampleGroup=None, groupBy=None, duplicates=False):
 		"""
