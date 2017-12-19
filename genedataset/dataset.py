@@ -10,15 +10,24 @@ from . import dataDirectory
 def createDatasetFile(destDir, **kwargs):
 	"""
 	Create a HDFStore file (.h5), which can be associated with a Dataset instance.
-	This file contains 2 pandas DataFrame objects as well as 1 pandas Series object.
+	This file contains multiple pandas DataFrame objects as well as 1 pandas Series object.
+	The pandas Series object holds dataset metadata, such as name and description.
+	The pandas DataFrame objects hold sample table and one or more expression matrices, as it
+	is often useful to have raw counts as well as cpm matrices, for example.
 		
-	The "/dataframe/expression" object should have sample ids as columns and feature ids as row indices.
+	The expression DataFrame object should have sample ids as columns and feature ids as row indices.
 	===================== ====== ======
 	geneId                s01    s02 
 	===================== ====== ======
 	ENSMUSG000004353      0      324
 	ENSMUSG00000039601    23     1342
 	===================== ====== ======
+	Often a dataset may contain multiple expression data frames and you can specify these by providing
+	a list of data frames and specifying the keys used for these within 'expression_data_keys' key of
+	the attributes dictionary. See example below.
+
+	While the samples DataFrame object should have sample ids as rows and columns are sample groupings.
+	See example below.
 
 	Parameters:
 		destDir: Destination directory for the file being created. Existing file of the same name will
@@ -31,17 +40,18 @@ def createDatasetFile(destDir, **kwargs):
 			fullname: A more descriptive name for the dataset.
 			version: Some version string to associate with the dataset.
 			description: Description of the dataset.
-			expression_type: Description of the type of expression matrix, eg "cpm" or "tpm"
+			expression_data_keys: list of keys describing the types of expression matrices, eg ['counts','cpm']
 			pubmed_id: id string to pubmed if published. Leave empty or None if not applicable.
 			species: one of ['MusMusculus','HomoSapiens']
 			
-		samples: (pandas.DataFrame) sample ids as index matching the columns of the expression matrix
+		samples: pandas.DataFrame where sample ids must be the index matching the columns of the expression matrices.
 			sampleId	celltype	tissue
 			s01		LSK		bone marrow
 			s02		T1		peripheral blood
 			(sampleId must be the index of the DataFrame.)
 	
-		expression: (pandas.DataFrame) sample ids as columns and feature ids as index
+		expressions: list of pandas.DataFrame's, where each DataFrame has sample ids as columns and feature ids as index
+		Note that order of this list must match the order given by expression_data_keys.
 			featureId		s01		s02
 			ENSG000003535	4.35	8.42
 			ENSG000004215	8.11	5.81
@@ -50,31 +60,68 @@ def createDatasetFile(destDir, **kwargs):
 		A Dataset instance.
 
 	Example:
-		>>> attributes = {"name":"haemopedia",
-					  "fullname": "Haemopedia",
-					  "version": "2.0",
-					  "description": "RNA-seq expression of murine haematopoietic cells",
+		import pandas
+		from genedataset import dataset
+		attributes = {"name": "testdata",
+					  "fullname": "Test Dataset",
+					  "version": "1.0",
+					  "description": "This dataset comes with the package for testing purposes.",
+					  "expression_data_keys": ["counts","cpm"],
 					  "pubmed_id": None,
 					  "species": "MusMusculus"}
-		# If attributes, samples, expression have been set as above:
-		>>> createDatasetFile("/datasets", attributes=attributes, samples=samples, expression=expression)
+		samples = pandas.DataFrame([['B1', 'BM'], ['B1', 'BM'], ['B2', 'BM'], ['B2', 'BM']],
+									index=['s01','s02','s03','s04'], columns=['celltype','tissue'])
+		samples.index.name = "sampleId"
+		counts = pandas.DataFrame([[35, 44, 21, 101], [50, 0, 14, 62], [0, 0, 39, 73]],
+									index=['gene1', 'gene2', 'gene3'], columns=['s01', 's02', 's03', 's04'])
+		counts.index.name = "geneId"
+		cpm = pandas.DataFrame([[3.45, 4.65, 2.65, 8.23], [5.54, 0.0, 1.43, 6.43], [0.0, 0.0, 4.34, 5.44]],
+								 index=['gene1', 'gene2', 'gene3'], columns=['s01', 's02', 's03', 's04'])
+		cpm.index.name = "geneId"
+		dataset.createDatasetFile("/datasets", attributes=attributes, samples=samples, expressions=[counts,cpm])
 	"""
 	# Parse input
 	if destDir[-1]=='/':
 		destDir = destDir[:-1]
 	attributes = kwargs['attributes']
 	samples = kwargs['samples']
-	expression = kwargs['expression']
+	expressions = kwargs['expressions']
 
 	# Check data
-	
+	error = None
+	if not isinstance(samples, pandas.DataFrame):
+		error = "samples table is not a pandas DataFrame object."
+	elif not isinstance(expressions, list):
+		error = "expressions is not a list object."
+	elif not all(isinstance(item, pandas.DataFrame) for item in expressions):
+		error = "one or more of the objects in expressions is not a pandas DataFrame object."
+	elif not attributes:
+		error = "attributes argument is missing or empty."
+	elif "name" not in attributes:
+		error = "'name' must be a key in attributes dictionary."
+	elif "expression_data_keys" not in attributes:
+		error = "'expression_data_keys' must be a key in attributes dictionary."
+	elif not attributes['expression_data_keys']:
+		error = "expression_data_keys in attributes dictionary must name the keys used for expressions."
+	elif any(len([item for item in df.columns if item not in samples.index])>0 for df in expressions):
+		error = "some sample ids in expression matrix missing in sample matrix"		
+
+	if error is not None:
+		print(error)
+		return
+
 	# Save all values to file
-	filepath = '%s/%s.%s.h5' % (destDir, attributes['name'], attributes['version'])
+	filepath = os.path.join(destDir, '%s.%s.h5' % (attributes['name'], attributes['version']))
 	if os.path.isfile(filepath): os.remove(filepath)
-	
+
+	# keys for expressions
 	pandas.Series(attributes).to_hdf(filepath, '/series/attributes')
 	samples.to_hdf(filepath, '/dataframe/samples')
-	expression.to_hdf(filepath, '/dataframe/expression')
+	for i,key in enumerate(attributes['expression_data_keys']):
+		expressions[i].to_hdf(filepath, '/dataframe/expression/%s' % key)
+
+	# Return the Dataset instance
+	return Dataset(filepath)
 	
 # ------------------------------------------------------------
 # Dataset class 
@@ -82,12 +129,15 @@ def createDatasetFile(destDir, **kwargs):
 class Dataset(object):
 	"""
 	An instance of Dataset is associated with its HDF file, which contains all the information about the dataset,
-	including expression matrix, sample information, and various metadata associated with the dataset.
+	including expression matrices, sample information, and various metadata associated with the dataset.
 
 	Attributes:
-		filepath: (string) full path to the HDFStore file associated with this dataset instance
-		fullname: (string) a more descriptive name stored within the HDFStore file.
-		species: (string) eg. 'MusMusculus','HomoSapiens'
+		name: (string) name of this dataset that can act as an identifier within an application
+		filepath: (string) full path to the HDF file associated with this dataset instance
+		attributes: (dict) complete metadata dictionary with keys 'description', 'expression_data_keys', 'fullname', 
+			'name', 'pubmed_id', 'species', 'version'
+		expression_data_keys: (list) keys used to retrieve different expression matrices, 
+			built from self.attributes.expression_data_keys
 		
 	"""
 	def __init__(self, pathToHdf):
@@ -95,15 +145,17 @@ class Dataset(object):
 		
 		self.attributes = pandas.read_hdf(self.filepath, '/series/attributes').to_dict()
 		self.name = self.attributes['name']
-		self.fullname = self.attributes['fullname']
-		self.species = self.attributes['species']
+		self.expression_data_keys = self.attributes['expression_data_keys']#.split(',')
 		
 		# samples is a pandas DataFrame which describes samples and their groupings.
 		# sample_id	level	name	value	colour
 		# CAGRF9188-1460	0	sampleId	CAGRF9188-1460	#ffffff	
 		# CAGRF9188-1333	0	sampleId	CAGRF9188-1333	#ffffff
-		self.samples = pandas.read_hdf(self.filepath, '/dataframe/samples')		
-		self.expression = pandas.read_hdf(self.filepath, '/dataframe/expression')
+		self.samples = pandas.read_hdf(self.filepath, '/dataframe/samples')
+
+		# There may be multiple expression matrices, and we use attributes.expression_data_keys to find them
+		self.expressions = dict([(key, pandas.read_hdf(self.filepath, '/dataframe/expression/%s' % key)) \
+								for key in self.attributes['expression_data_keys']])
 		
 	def __repr__(self):
 		return "<Dataset name:%s, %s samples>" % (self.name, len(self.samples))
@@ -116,10 +168,12 @@ class Dataset(object):
 	# ------------------------------------------------------------
 	# Expression matrix related methods 
 	# ------------------------------------------------------------
-	def expressionMatrix(self, featureIds=None, sampleGroupForMean=None):
+	def expressionMatrix(self, expression_data_key=None, featureIds=None, sampleGroupForMean=None):
 		"""Return pandas DataFrame of expression values matching featureIds.
 	
 		Parameters:
+			expression_data_key: specifies which expression matrix to fetch. If None, it will fetch the first
+				one specified by self.expression_data_keys
 			featureIds: a list of row ids eg: ['ENSG000003535',...] or a string 'ENSG0000003535' or None, 
 				in which case the full expression matrix is returned.
 			sampleGroupForMean: a sample group name eg 'celltype' which will be used to return the mean
@@ -128,12 +182,13 @@ class Dataset(object):
 		Returns:
 			pandas.DataFrame instance	
 		"""
-		df = self.expression
+		df = self.expressions[expression_data_key if expression_data_key in self.expression_data_keys else \
+								self.expression_data_keys[0]]
 		
 		if isinstance(featureIds, six.string_types):	# assume single feature was specified
 			featureIds = [featureIds]
 		
-		# work out which row index to use based on platform type
+		# subset rows if required
 		if featureIds is not None and len(featureIds)>0:
 			index = set(featureIds).intersection(set(df.index))
 		else:
@@ -150,21 +205,20 @@ class Dataset(object):
 				# it's possible for celltypes to be defined the same as sample ids, for example
 				df = df.groupby(sgi, axis=1).mean()
 			
-		return df
-		
+		return df		
 				
-	def totalReads(self):
+	def totalReads(self, expression_data_key=None):
 		"""Return a dictionary that looks like {'CAGRF7126-1213':44831299, ...}
 		which holds the total number of reads (basically sum of all raw reads) keyed on sample id.
 		"""
-		return self.expression.sum(axis=0).to_dict()
+		return self.expressionMatrix(expression_data_key=expression_data_key).sum(axis=0).to_dict()
 		
-	def valueRange(self):
-		"""Return a list of [min,max] value for the whole dataset.
+	def valueRange(self, expression_data_key=None):
+		"""Return a list of [min,max] value for the whole expression matrix.
 		"""
-		return [self.expression.min().min(), self.expression.max().max()]
+		return [self.expressionMatrix(expression_data_key=expression_data_key).min().min(), self.expression.max().max()]
 			
-	def correlation(self, featureId):
+	def correlation(self, featureId, expression_data_key=None):
 		"""
 		Return a dictionary of correlation scores for each feature id in the dataset, eg: {'ENSMUSG0000034355':0.343, ...}
 		Each value is the correlation between featureId and each feature in the expression matrix.
@@ -174,7 +228,7 @@ class Dataset(object):
 		from scipy.stats.stats import pearsonr
 		
 		# Use log2
-		df = numpy.log2(self.expression + 1)
+		df = numpy.log2(self.expressionMatrix(expression_data_key=expression_data_key) + 1)
 		if featureId not in df.index: return None
 				
 		# values for featureId
@@ -282,15 +336,16 @@ def test_createDatasetFile():
 				  "fullname": "Test Dataset",
 				  "version": "1.0",
 				  "description": "Created as part of daset test function",
+				  "expression_data_keys": ['expression'],
 				  "pubmed_id": None,
 				  "species": "MusMusculus"}
 	samples = pandas.DataFrame([['B1','B Cell Lineage'],['B2','B Cell Lineage']], index=['sample1','sample2'], columns=['celltype','cell_lineage'])
 	expression = pandas.DataFrame([[3,0],[5,2],[0,4]], index=['gene1','gene2','gene3'], columns=['sample1','sample2'])
-	createDatasetFile("/tmp", attributes=attributes, samples=samples, expression=expression)
+	createDatasetFile("/tmp", attributes=attributes, samples=samples, expressions=[expression])
 
 def test_attributes():
 	ds = Dataset("/tmp/test.1.0.h5")
-	assert ds.species=="MusMusculus"
+	assert ds.attributes['species']=="MusMusculus"
 	assert ds.name=="test"
 	assert ds.attributes['pubmed_id'] is None
 
@@ -298,17 +353,9 @@ def test_expressionMatrix():
 	ds = Dataset("/tmp/test.1.0.h5")
 	assert ds.expressionMatrix()['sample1'].tolist()==[3,5,0]
 	assert ds.expressionMatrix(sampleGroupForMean='celltype').at['gene2','B2']==2
-'''	
-def test_expressionValues():
-	ds = Dataset("%s/testdata.h5" % dataDirectory())
-	ev = ds.expressionValues(geneIds=['gene2'])
-	assert ev['values']['probe2']['s01']==5.54
-	assert ev['featureGroups']['gene2']==['probe2','probe3']
-	assert ds.expressionValues(geneIds=['nonsense'])['values']=={}
-	assert str(ds.correlation('probe1')['gene2'])[:4]=='0.53'
 
 def test_samples():
-	ds = Dataset("%s/testdata.h5" % dataDirectory())	
+	ds = Dataset("%s/testdata.1.0.h5" % dataDirectory())	
 	assert ds.sampleGroups()==['celltype','tissue']
 	assert ds.sampleGroupItems(sampleGroup="celltype")==['B1','B2']
 	assert ds.sampleGroupItems(sampleGroup='celltype', groupBy='tissue')=={'BM': ['B1', 'B2']}
@@ -316,4 +363,4 @@ def test_samples():
 	assert ds.sampleIds()==['s01','s02','s03','s04']
 	assert ds.sampleIds(sampleGroup='celltype', sampleGroupItem='B1')==['s01','s02']
 	assert ds.sampleIdsFromSampleGroups()['tissue']['BM']==['s01', 's02', 's03', 's04']
-'''
+

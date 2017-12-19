@@ -197,12 +197,6 @@ class Geneset(object):
 		"""
 		return self._dataframe
 		
-	'''
-	def medianTranscriptLengths(self):
-		"""Return a dictionary of median transcript length keyed on gene id
-		"""
-		return dict(zip(self._dataframe.index, self._dataframe['MedianTranscriptLength']))
-	'''
 	
 '''
 Create the Genes.h5 file from source files (Updated 2017-05-26). This requires downloading various data files in text format

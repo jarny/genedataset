@@ -8,6 +8,7 @@ Some significant changes have been made in this version:
 2. The Gene annotation has been upgraded to Ensembl version 88.
 3. Dataset no longer supports microarrays, so it's been simplified.
 4. The package supports both python 3 and 2 - tested on 2.7.14 and 3.6.3.
+5. Some methods
 
 ## Installation
 ```bash
@@ -19,7 +20,7 @@ geneset stores gene information combined from both Ensembl and NCBI/Entrez (mous
 ```python
 from genedataset import geneset
 gs = geneset.Geneset().subset(queryStrings='ccr3')
-print gs.geneIds()
+print(gs.geneIds())
  ['ENSG00000183625', 'ENSMUSG00000035448']
 gs.dataframe()
  | EnsemblId          | Species     | EntrezId | GeneSymbol | Synonyms                     | Description                      | TranscriptLengths                             | Orthologue              |
@@ -52,25 +53,27 @@ ds.sampleTable()
 
 ## Dataset creation example
 Here is an example to create a Dataset file from text files. Once the file has been created, it can be accessed through the Dataset instance. The advantage of this is to store all related information for a dataset in one file, and gives you a python object that can be used for analyses and for application development.
-```python
+```pytho
 import pandas
-from genedataset import geneset, dataset
+from genedataset import dataset
+attributes = {"name": "testdata",
+				"fullname": "Test Dataset",
+				"version": "1.0",
+				"description": "This dataset comes with the package for testing purposes.",
+				"expression_data_keys": ["counts","cpm"],
+				"pubmed_id": None,
+				"species": "MusMusculus"}
+samples = pandas.DataFrame([['B1', 'BM'], ['B1', 'BM'], ['B2', 'BM'], ['B2', 'BM']],
+							index=['s01','s02','s03','s04'], columns=['celltype','tissue'])
+samples.index.name = "sampleId"
+counts = pandas.DataFrame([[35, 44, 21, 101], [50, 0, 14, 62], [0, 0, 39, 73]],
+							index=['gene1', 'gene2', 'gene3'], columns=['s01', 's02', 's03', 's04'])
+counts.index.name = "geneId"
+cpm = pandas.DataFrame([[3.45, 4.65, 2.65, 8.23], [5.54, 0.0, 1.43, 6.43], [0.0, 0.0, 4.34, 5.44]],
+							index=['gene1', 'gene2', 'gene3'], columns=['s01', 's02', 's03', 's04'])
+cpm.index.name = "geneId"
+dataset.createDatasetFile("/datasets", attributes=attributes, samples=samples, expressions=[counts,cpm])
 
-# Define dataset attributes dictionary 
-attributes = {"name":"mydataset",
-			  "fullname": "MyDataset",
-			  "version": "1.0",
-			  "description": "RNA-seq expression of murine haematopoietic cells",
-			  "expression_type": "cpm",
-			  "pubmed_id": None,
-			  "species": "MusMusculus"}
-					  
-# Read expression matrix and sample table
-expression = pandas.read_csv("cpm.txt", sep="\t", index_col=0)   # data frame must have index
-samples = pandas.read_csv("samples.txt", sep="\t", index_col=0)  # sample ids form index, should match columns of expression (different ordering OK)
-
-ds = dataset.createDatasetFile("/datasets", attributes=attributes, samples=samples, expression=expression)
-        
 ```
 
 ## Contact
