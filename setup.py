@@ -11,11 +11,12 @@ requires = [
     ]
 
 setup(name='genedataset',
-      version='1.0',
+      version='1.0.0a3',
       description='Store and access gene expression datasets and gene definitions.',
       long_description=README,
       classifiers=[
-        "Programming Language :: Python :: 3.6, 2.7",
+        "Programming Language :: Python :: 2",
+        "Programming Language :: Python :: 3",
         "Topic :: Scientific/Engineering :: Bio-Informatics",
         ],
       author='Jarny Choi',
