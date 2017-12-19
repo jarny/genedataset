@@ -23,11 +23,11 @@ gs = geneset.Geneset().subset(queryStrings='ccr3')
 print(gs.geneIds())
  ['ENSG00000183625', 'ENSMUSG00000035448']
 gs.dataframe()
+```
  | EnsemblId          | Species     | EntrezId | GeneSymbol | Synonyms                     | Description                      | TranscriptLengths                             | Orthologue              |
  |--------------------|:-----------:|---------:|-----------:|-----------------------------:|---------------------------------:|----------------------------------------------:|------------------------:|
  | ENSG00000183625    | HomoSapiens | 1232     | CCR3       | CC-CKR-3|CD193|CKR3|CMKBR3   | C-C motif chemokine receptor 3   | [2000, 1581, 400, 436, 212, 1284, 1201, 1786] | ENSMUSG00000035448:Ccr3 |
  | ENSMUSG00000035448 | MusMusculus | 12771    | Ccr3       | CC-CKR3|CKR3|Cmkbr1l2|Cmkbr3 | chemokine (C-C motif) receptor 3 | [3272]                                        | ENSG00000183625:CCR3    |
-```
 
 ## dataset
 dataset can store gene expression data so that it can be queried. The stored data consists of expression values (usually rna-seq) and sample data packaged into HDF5 format.
@@ -37,23 +37,25 @@ ds = dataset.Dataset("genedataset/data/testdata.1.0.h5")
 ds
  <Dataset name:testdata 4 samples>
 ds.expressionMatrix()
+```
  | featureId | s01  | s02  | s03  | s04  |
  |---------|------|------|------|------|
  | gene1  | 3.45 | 4.65 | 2.65 | 8.23 |
  | gene2  | 5.54 | 0.00 | 1.43 | 6.43 |
  | gene3  | 0.00 | 0.00 | 4.34 | 5.44 |
+ ```python
 ds.sampleTable()
+```
  | sampleId | celltype | tissue |
  |----------|----------|--------|
  | s01      | B1       | BM     |
  | s02      | B1       | BM     |
  | s03      | B2       | BM     |
  | s04      | B2       | BM     |
-```
 
 ## Dataset creation example
 Here is an example to create a Dataset file from text files. Once the file has been created, it can be accessed through the Dataset instance. The advantage of this is to store all related information for a dataset in one file, and gives you a python object that can be used for analyses and for application development.
-```pytho
+```python
 import pandas
 from genedataset import dataset
 attributes = {"name": "testdata",
@@ -64,10 +66,10 @@ attributes = {"name": "testdata",
 				"pubmed_id": None,
 				"species": "MusMusculus"}
 samples = pandas.DataFrame([['B1', 'BM'], ['B1', 'BM'], ['B2', 'BM'], ['B2', 'BM']],
-							index=['s01','s02','s03','s04'], columns=['celltype','tissue'])
+					    index=['s01','s02','s03','s04'], columns=['celltype','tissue'])
 samples.index.name = "sampleId"
 counts = pandas.DataFrame([[35, 44, 21, 101], [50, 0, 14, 62], [0, 0, 39, 73]],
-							index=['gene1', 'gene2', 'gene3'], columns=['s01', 's02', 's03', 's04'])
+						index=['gene1', 'gene2', 'gene3'], columns=['s01', 's02', 's03', 's04'])
 counts.index.name = "geneId"
 cpm = pandas.DataFrame([[3.45, 4.65, 2.65, 8.23], [5.54, 0.0, 1.43, 6.43], [0.0, 0.0, 4.34, 5.44]],
 							index=['gene1', 'gene2', 'gene3'], columns=['s01', 's02', 's03', 's04'])
