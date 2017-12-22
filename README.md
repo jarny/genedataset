@@ -11,7 +11,7 @@ Some significant changes have been made in this version:
 
 ## Installation
 ```bash
-pip install -e genedataset
+pip install genedataset==[latest_version_number]
 ```
 
 ## geneset

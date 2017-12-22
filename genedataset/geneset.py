@@ -116,7 +116,7 @@ class Geneset(object):
 			A new Geneset instance with the subset of genes.
 			
 		Examples:
-			>>> print Geneset().subset(['ENSMUSG00000039601','ccr3']).geneSymbols()
+			>>> print(Geneset().subset(['ENSMUSG00000039601','ccr3']).geneSymbols())
 			EnsemblId
 			ENSG00000183625       CCR3
 			ENSMUSG00000035448    Ccr3
