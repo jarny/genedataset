@@ -11,7 +11,10 @@ Some significant changes have been made in this version:
 
 ## Installation
 ```bash
-pip install genedataset==[latest_version_number]
+    pip install genedataset
+
+    # If this installs the old version 0.6 instead of the latest, explicitly specify the version:
+    pip install genedataset==[latest_version_number]
 ```
 
 ## geneset

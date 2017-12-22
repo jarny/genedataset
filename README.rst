@@ -23,7 +23,10 @@ Installation
 
 .. code:: bash
 
-    pip install -e genedataset
+    pip install genedataset
+
+    # If this installs the old version 0.6 instead of the latest, explicitly specify the version:
+    pip install genedataset==[latest_version_number]
 
 geneset
 -------
